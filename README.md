@@ -41,7 +41,7 @@ Skynvættr aims to provide a foundation for systems that can:
 - remain independent of any specific physical environment or integration platform;
 - expose extensible mechanisms for taking actions in the environment.
 
-The project is not intended to be tied to smart homes, Home Assistant, a particular LLM provider, or even necessarily to LLM-based reasoning. Those may be integrations or implementations built on top of the core model.
+Skynvættr is an open-ended approach to building sensing artificial beings: persistent entities that can perceive an environment, develop an understanding of it over time, and interact with it through available mechanisms. The project will draw on machine learning and neural-network-based components, likely including LLMs or LLM-like models, for perception, reasoning, interpretation, and interaction.
 
 ## Terminology
 
