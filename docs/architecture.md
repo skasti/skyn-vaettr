@@ -18,8 +18,8 @@ The architecture is guided by a few core principles:
 2. **Signals are not perceptions**  
    Raw environmental data must remain distinct from the interpretation of that data.
 
-3. **Perceptions are not beliefs**  
-   What was observed and what the entity currently believes about the world are different concepts.
+3. **Internal representation is intentionally open**  
+   Perception may contribute to persistent internal state or context, but Skynvættr does not yet prescribe whether that state should be represented as explicit beliefs, learned latent state, memories, structured facts, or some combination.
 
 4. **Reasoning is a component, not the system**  
    An LLM, neural network, classifier, rules engine, or other model may participate in reasoning without defining the architecture as a whole.
@@ -74,29 +74,27 @@ This diagram is intentionally circular. The system does not process one isolated
 
 ## Core semantic pipeline
 
-The most important conceptual separation is:
+The current architecture deliberately keeps the semantic pipeline broad:
 
 ```text
-Signal -> Observation -> Belief -> Intent -> Action
+Signal -> Perception -> Internal state / context -> Decision -> Action
 ```
-
-Each step represents a different kind of information.
 
 ```mermaid
 flowchart LR
     S[Signal<br/>What a source reported]
-    O[Observation<br/>What was perceived]
-    B[Belief<br/>What the entity currently thinks is true]
-    I[Intent<br/>What the entity wants to accomplish]
+    P[Perception<br/>Interpretation and filtering]
+    C[Internal state / context<br/>Persistent representation]
+    D[Decision<br/>What should happen next]
     A[Action<br/>What is actually executed]
 
-    S --> O
-    O --> B
-    B --> I
-    I --> A
+    S --> P
+    P --> C
+    C --> D
+    D --> A
 ```
 
-These concepts must not collapse into one another even if an early implementation sometimes maps them directly.
+The exact representation used inside `Internal state / context` is intentionally not fixed yet. Explicit beliefs are one possible approach, but not a required architectural concept.
 
 ### Signal
 
@@ -141,25 +139,21 @@ The temperature has risen unusually quickly during the last 20 minutes.
 
 Observations may be derived from one signal, many signals, historical state, existing beliefs, or combinations of these.
 
-### Belief
+### Internal state / context
 
-A **Belief** is part of the entity's current internal model of the world.
+Perception may update persistent internal state used by later processing and decisions.
 
-For example, two sensors may report different positions for the same entity. Instead of treating the most recent signal as absolute truth, Skynvættr may eventually reconcile those signals into a belief with an associated confidence.
+The runtime should not yet prescribe the form of that state. Candidate approaches may include:
 
-```mermaid
-flowchart LR
-    S1[Camera signal<br/>position: kitchen<br/>confidence: 0.96]
-    S2[Bluetooth signal<br/>position: hallway<br/>confidence: 0.61]
-    P[Perception / reconciliation]
-    B[Belief<br/>likely position: kitchen<br/>confidence: high]
+- structured facts or relationships;
+- explicit hypotheses or beliefs with confidence;
+- episodic or semantic memory;
+- learned latent state;
+- model-specific context;
+- combinations of several approaches.
 
-    S1 --> P
-    S2 --> P
-    P --> B
-```
+These alternatives should be explored experimentally before one is promoted to a core abstraction.
 
-Beliefs are expected to change over time as new evidence arrives.
 
 ### Intent
 
@@ -364,60 +358,28 @@ External services may impose limits or temporary availability constraints of the
 A subsystem should therefore be able to retain its own cadence even when an external dependency cannot immediately satisfy a request. The exact mechanisms for handling such constraints are intentionally left to later design.
 
 
-## World model
+## Persistent internal context
 
-The **World Model** is the entity's evolving internal representation of what it believes is happening.
+A Skynvættr entity needs some form of persistent internal context across processing cycles. This allows later perception and decisions to depend on what has happened before rather than only on the latest signal.
 
-It should not be treated as a synonym for vector memory or conversation history.
-
-A possible conceptual structure is:
-
-```mermaid
-flowchart TB
-    WM[World Model]
-    ENT[Known entities]
-    REL[Relationships]
-    BEL[Current beliefs]
-    TEMP[Temporal state]
-    OBS[Observations]
-    EXP[Expectations]
-    Q[Unresolved questions]
-    MEM[Experiences / memories]
-
-    WM --> ENT
-    WM --> REL
-    WM --> BEL
-    WM --> TEMP
-    WM --> OBS
-    WM --> EXP
-    WM --> Q
-    WM --> MEM
-```
-
-The implementation may initially be much simpler than this model. The architectural requirement is primarily that internal understanding has an explicit representation independent of a reasoning prompt.
-
-### Beliefs and evidence
-
-A belief should conceptually be derived from evidence rather than overwrite the evidence that created it.
+The architecture intentionally does not yet define this as a particular "world model" structure.
 
 ```mermaid
 flowchart LR
-    SIG[Signals]
-    OBS[Observations]
-    EVI[Evidence]
-    BEL[Belief]
-    NEW[New evidence]
-    REV[Belief revision]
+    H[History / prior state]
+    P[Perception]
+    C[Persistent internal context]
+    D[Decision]
+    N[New signals]
 
-    SIG --> OBS
-    OBS --> EVI
-    EVI --> BEL
-    NEW --> REV
-    BEL --> REV
-    REV --> BEL
+    H --> C
+    N --> P
+    C --> P
+    P --> C
+    C --> D
 ```
 
-This makes uncertainty, disagreement, and revision possible.
+Possible representations include structured state, memory, explicit beliefs, learned latent representations, or mixtures of these. Which abstractions deserve to become part of the core API should be determined through experiments and measured behavior rather than assumed up front.
 
 ## Internal state and drives
 
@@ -438,16 +400,16 @@ These concepts should not require anthropomorphic interpretation. They may simpl
 
 ```mermaid
 flowchart LR
-    WM[World Model]
+    C[Internal context]
     D[Drives / Internal state]
     ATT[Attention]
     R[Reasoning]
     I[Intentions]
 
-    WM --> ATT
+    C --> ATT
     D --> ATT
     ATT --> R
-    WM --> R
+    C --> R
     D --> R
     R --> I
 ```
@@ -612,8 +574,8 @@ Several architectural ideas were explored in earlier experiments and prototypes 
 These include:
 
 - structured signal policies;
-- observation weighting using dimensions such as importance, reliability, significance, and confidence;
-- historical observations and contextual state;
+- weighting and filtering observations using dimensions such as importance, reliability, significance, and confidence;
+- persistent historical and contextual state;
 - adaptive perception intervals as an experimental mechanism, with the lesson that Skynvættr should instead give individual subsystems their own mostly stable cadences while keeping external service constraints separate from those internal rhythms;
 - stored thoughts and unresolved questions;
 - internal impulses and mood-like state;
@@ -643,8 +605,7 @@ skyn-vaettr
 |   +-- pipeline
 |
 +-- world
-|   +-- beliefs
-|   +-- relationships
+|   +-- state
 |   +-- history
 |   +-- memory
 |
@@ -674,7 +635,7 @@ The initial milestones should concentrate on the parts that establish the semant
 3. signal policies;
 4. observation generation;
 5. a perception pipeline;
-6. a minimal persistent context/world-model representation.
+6. a minimal persistent internal context representation.
 
 Reasoning orchestration, richer belief revision, internal drives, and effectors can be introduced once those foundations have proven useful.
 
@@ -686,8 +647,8 @@ Several concepts remain intentionally unresolved:
 
 - What is the exact ownership relationship between sources, entities, and channels?
 - Should observations be immutable event records?
-- How should beliefs represent confidence and competing hypotheses?
-- Which parts of the world model should be durable across restarts?
+- Which internal-state representations prove useful enough to become core abstractions?
+- Which parts of internal context should be durable across restarts?
 - How should temporal relationships be represented?
 - Is attention a first-class object, a policy result, or both?
 - Should "mind" become a concrete abstraction or remain descriptive terminology?
