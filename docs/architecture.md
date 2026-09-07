@@ -2,7 +2,7 @@
 
 This document describes the current conceptual architecture of Skynvættr.
 
-Skynvættr is a runtime for persistent artificial entities that continuously perceive an environment, maintain an evolving internal understanding of it, reason about what they observe, and interact with the environment through explicitly defined mechanisms.
+Skynvættr is an experimental persistent artificial system intended to perceive an environment, maintain evolving internal context over time, process and reason about what it senses, and eventually affect that environment through explicitly defined mechanisms.
 
 The architecture is intentionally domain-independent. Home automation, infrastructure monitoring, robotics, software systems, simulations, and other environments should be integrations built around the same core model rather than assumptions embedded into the runtime.
 
@@ -13,7 +13,7 @@ The first implementation is expected to evolve significantly. The concepts in th
 The architecture is guided by a few core principles:
 
 1. **Persistence over request/response**  
-   A Skynvættr entity exists across perception cycles. It is not created merely to answer one request and disappear.
+   Skynvættr exists across processing and perception cycles. It is not instantiated merely to answer one request and disappear.
 
 2. **Signals are not perceptions**  
    Raw environmental data must remain distinct from the interpretation of that data.
@@ -34,7 +34,7 @@ The architecture is guided by a few core principles:
    Most environmental changes should not require expensive reasoning. Policies and lower-cost processing should determine what deserves further attention.
 
 8. **Uncertainty is expected**  
-   Different sources may disagree, observations may be incomplete, and beliefs should be able to represent confidence rather than forcing premature certainty.
+   Different sources may disagree and observations may be incomplete. The architecture should leave room for uncertainty without prescribing how it must be represented.
 
 9. **Subsystem cadence should be stable**  
    Individual sensing, perception, maintenance, and reasoning subsystems may each operate on their own cadence. These intervals should generally be explicit and stable rather than continuously adjusted as a proxy for attention.
@@ -44,57 +44,54 @@ The architecture is guided by a few core principles:
 
 ## The continuous loop
 
-At the highest level, a Skynvættr entity participates in a continuous feedback loop with its environment.
+At the highest level, Skynvættr participates in a continuous feedback loop with its environment.
 
 ```mermaid
 flowchart TD
     ENV[Environment]
     SIG[Signals]
     PER[Perception]
-    WM[Context / World Model]
-    REA[Reasoning and Decisions]
-    INT[Intentions]
-    EFF[Effectors]
-    ACT[Actions]
+    CTX[Internal context]
+    PROC[Processing / Reasoning]
+    BEH[Behaviour / Effectors]
+    ACT[Effects on environment]
 
     ENV --> SIG
     SIG --> PER
-    PER --> WM
-    WM --> REA
-    REA --> INT
-    INT --> EFF
-    EFF --> ACT
+    PER --> CTX
+    CTX --> PROC
+    PROC --> BEH
+    BEH --> ACT
     ACT --> ENV
 
-    WM --> PER
-    WM --> REA
+    CTX --> PER
+    CTX --> PROC
 ```
 
 This diagram is intentionally circular. The system does not process one isolated input to produce one isolated output. Each cycle takes place in the context produced by previous cycles.
 
-## Core semantic pipeline
+## Core interaction loop
 
-The current architecture deliberately keeps the semantic pipeline broad:
+The current architecture deliberately keeps the cognitive path broad.
 
 ```text
-Signal -> Perception -> Internal state / context -> Decision -> Action
+Environment -> Sensing -> Processing / internal state -> Behaviour -> Environment
 ```
 
 ```mermaid
 flowchart LR
-    S[Signal<br/>What a source reported]
-    P[Perception<br/>Interpretation and filtering]
-    C[Internal state / context<br/>Persistent representation]
-    D[Decision<br/>What should happen next]
-    A[Action<br/>What is actually executed]
+    E[Environment]
+    S[Sensing]
+    P[Processing / internal state]
+    B[Behaviour]
 
+    E --> S
     S --> P
-    P --> C
-    C --> D
-    D --> A
+    P --> B
+    B --> E
 ```
 
-The exact representation used inside `Internal state / context` is intentionally not fixed yet. Explicit beliefs are one possible approach, but not a required architectural concept.
+This is intentionally less specific than a pipeline of named cognitive objects. Skynvættr should establish the boundaries required for persistent sensing, processing, learning, and interaction without prematurely deciding how goals, expectations, plans, decisions, or intentions must be represented internally.
 
 ### Signal
 
@@ -155,31 +152,13 @@ The runtime should not yet prescribe the form of that state. Candidate approache
 These alternatives should be explored experimentally before one is promoted to a core abstraction.
 
 
-### Intent
+### Behaviour and action
 
-An **Intent** represents a desired change or outcome.
+Skynvættr is intended to eventually affect its environment, but the architecture does not yet prescribe a specific cognitive object such as an `Intent`.
 
-It is deliberately more abstract than an API call.
+A long-term goal is for Skynvættr to be able to communicate or otherwise represent what it is trying to achieve well enough that behaviour can be selected, outcomes can be observed, expectations can be evaluated, and future behaviour can adapt or learn from the result.
 
-For example:
-
-```text
-reduce_temperature(loft)
-```
-
-is an intent.
-
-```text
-homeAssistant.callService("fan", "set_percentage", ...)
-```
-
-is not. That is an implementation-specific action.
-
-### Action
-
-An **Action** is a concrete operation attempted through an effector.
-
-The separation between intent and action makes it possible to reason about goals independently of the environment-specific mechanism available to achieve them.
+Whether concepts such as intent, goal, plan, expectation, or action become explicit core abstractions should be determined through experiments rather than fixed now.
 
 ## Signals, entities, channels, and sources
 
@@ -214,7 +193,7 @@ Examples include:
 - an operating-system telemetry collector;
 - an API;
 - an event stream;
-- another Skynvættr entity.
+- another external system.
 
 ### Entity
 
@@ -338,7 +317,7 @@ flowchart LR
     EV --> BUS
 ```
 
-This differs from earlier prototype approaches where a comparatively global perception interval could be adjusted to make the entity "wake up" more or less frequently. Skynvættr should instead let each subsystem express its own timing requirements.
+This differs from earlier prototype approaches where a comparatively global perception interval could be adjusted to make the system "wake up" more or less frequently. Skynvættr should instead let each subsystem express its own timing requirements.
 
 Attention still matters, but it should primarily affect **priority and allocation of processing resources**, not continuously rewrite subsystem intervals.
 
@@ -360,7 +339,7 @@ A subsystem should therefore be able to retain its own cadence even when an exte
 
 ## Persistent internal context
 
-A Skynvættr entity needs some form of persistent internal context across processing cycles. This allows later perception and decisions to depend on what has happened before rather than only on the latest signal.
+Skynvættr needs some form of persistent internal context across processing cycles. This allows later perception and decisions to depend on what has happened before rather than only on the latest signal.
 
 The architecture intentionally does not yet define this as a particular "world model" structure.
 
@@ -383,7 +362,7 @@ Possible representations include structured state, memory, explicit beliefs, lea
 
 ## Internal state and drives
 
-A persistent artificial entity may need internal state that is neither an environmental belief nor an externally supplied goal.
+Skynvættr may need internal state that is neither a representation of the environment nor an externally supplied goal.
 
 Examples might include:
 
@@ -418,9 +397,9 @@ For example, high uncertainty about an important belief may cause the system to 
 
 ## Reasoning and minds
 
-Reasoning is a subsystem of a Skynvættr entity, not the entity itself.
+Reasoning is a subsystem of Skynvættr, not Skynvættr itself.
 
-A single entity may use multiple reasoning components.
+Skynvættr may use multiple reasoning components.
 
 ```mermaid
 flowchart TD
@@ -477,7 +456,7 @@ flowchart LR
 
 ### Capability
 
-A **Capability** describes something the entity is allowed and able to do in semantic terms.
+A **Capability** describes something Skynvættr is allowed and able to do in semantic terms.
 
 Examples:
 
@@ -533,7 +512,7 @@ flowchart TB
     subgraph CORE[Skynvættr runtime]
         SIGNALS[Signals]
         PER[Perception]
-        WORLD[World Model]
+        CONTEXT[Internal context]
         REASON[Reasoning]
         EFFECT[Capabilities / Effectors]
     end
@@ -560,8 +539,8 @@ flowchart TB
     EFFECT --> SIM
 
     SIGNALS --> PER
-    PER --> WORLD
-    WORLD --> REASON
+    PER --> CONTEXT
+    CONTEXT --> REASON
     REASON --> EFFECT
 ```
 
@@ -616,7 +595,6 @@ skyn-vaettr
 |   +-- drives
 |
 +-- actions
-|   +-- intentions
 |   +-- capabilities
 |   +-- effectors
 |
@@ -654,14 +632,14 @@ Several concepts remain intentionally unresolved:
 - Should "mind" become a concrete abstraction or remain descriptive terminology?
 - How should reasoning components declare the context they require?
 - How should capabilities express permissions, risk, and reversibility?
-- How should an entity distinguish externally assigned goals from internally generated drives?
-- Can multiple Skynvættr entities share signals or world-model information without sharing identity?
+- How should Skynvættr distinguish externally assigned goals from internally generated drives?
+- How should multiple Skynvættr systems communicate or share information, if that becomes useful?
 
 These questions should be answered through implementation and experiments rather than prematurely fixed in the public API.
 
 ## Summary
 
-The central architectural idea is that a Skynvættr entity is the complete persistent loop:
+The central architectural idea is that Skynvættr is the complete persistent loop:
 
 ```mermaid
 flowchart LR
@@ -676,6 +654,6 @@ flowchart LR
 
 An LLM is not Skynvættr. Home Assistant is not Skynvættr. A memory store is not Skynvættr.
 
-They may all participate in a Skynvættr entity.
+They may all participate in Skynvættr.
 
-The runtime is the structure that allows sensing, perception, persistent internal state, reasoning, and action to remain separate and composable while together forming one continuously existing artificial entity.
+Skynvættr brings sensing, perception, persistent internal state, reasoning, and action together into one continuously existing artificial system while keeping those concerns separable and composable.
