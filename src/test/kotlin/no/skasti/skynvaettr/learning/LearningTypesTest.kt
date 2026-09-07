@@ -13,6 +13,18 @@ class LearningTypesTest {
     }
 
     @Test
+    fun `sensory frames defensively copy caller owned maps`() {
+        val values = mutableMapOf("a" to 5.0)
+        val frame = SensoryFrame(values)
+
+        values["a"] = 99.0
+        values["late"] = Double.NaN
+
+        assertEquals(5.0, frame["a"])
+        assertEquals(null, frame["late"])
+    }
+
+    @Test
     fun `normalized values reject out of range input`() {
         assertFailsWith<IllegalArgumentException> { EffectorValue(1.01) }
         assertFailsWith<IllegalArgumentException> { Consequence(-1.01) }
