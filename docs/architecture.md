@@ -197,7 +197,9 @@ Examples include:
 
 ### Entity
 
-An **Entity** is something in the observed world about which the system can maintain state or beliefs.
+An **Entity** is something in the observed world about which the system can maintain state or context.
+
+Within the runtime model, `Entity` refers to something in the environment that a Skynvættr instance can observe or maintain state about. The broader description of a running Skynvættr instance as an artificial entity is descriptive terminology, not a separate runtime type.
 
 Examples include a person, animal, room, machine, application, service, vehicle, or other meaningful object.
 
