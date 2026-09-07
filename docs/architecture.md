@@ -2,7 +2,7 @@
 
 This document describes the current conceptual architecture of Skynvættr.
 
-Skynvættr is an experimental persistent artificial system intended to perceive an environment, maintain evolving internal context over time, process and reason about what it senses, and eventually affect that environment through explicitly defined mechanisms.
+Skynvættr is a runtime for persistent artificial entities. Each running Skynvættr instance represents such an entity: a continuously existing artificial system that perceives an environment, maintains evolving internal context over time, processes and reasons about what it senses, and can eventually affect that environment through explicitly defined mechanisms.
 
 The architecture is intentionally domain-independent. Home automation, infrastructure monitoring, robotics, software systems, simulations, and other environments should be integrations built around the same core model rather than assumptions embedded into the runtime.
 
@@ -13,7 +13,7 @@ The first implementation is expected to evolve significantly. The concepts in th
 The architecture is guided by a few core principles:
 
 1. **Persistence over request/response**  
-   Skynvættr exists across processing and perception cycles. It is not instantiated merely to answer one request and disappear.
+   A running Skynvættr instance exists across processing and perception cycles. It is not instantiated merely to answer one request and disappear.
 
 2. **Signals are not perceptions**  
    Raw environmental data must remain distinct from the interpretation of that data.
@@ -44,7 +44,7 @@ The architecture is guided by a few core principles:
 
 ## The continuous loop
 
-At the highest level, Skynvættr participates in a continuous feedback loop with its environment.
+At the highest level, a running Skynvættr instance participates in a continuous feedback loop with its environment.
 
 ```mermaid
 flowchart TD
@@ -339,7 +339,7 @@ A subsystem should therefore be able to retain its own cadence even when an exte
 
 ## Persistent internal context
 
-Skynvættr needs some form of persistent internal context across processing cycles. This allows later perception and decisions to depend on what has happened before rather than only on the latest signal.
+A running Skynvættr instance needs some form of persistent internal context across processing cycles. This allows later perception and decisions to depend on what has happened before rather than only on the latest signal.
 
 The architecture intentionally does not yet define this as a particular "world model" structure.
 
@@ -362,7 +362,7 @@ Possible representations include structured state, memory, explicit beliefs, lea
 
 ## Internal state and drives
 
-Skynvættr may need internal state that is neither a representation of the environment nor an externally supplied goal.
+A running Skynvættr instance may need internal state that is neither a representation of the environment nor an externally supplied goal.
 
 Examples might include:
 
@@ -397,9 +397,9 @@ For example, high uncertainty about an important belief may cause the system to 
 
 ## Reasoning and minds
 
-Reasoning is a subsystem of Skynvættr, not Skynvættr itself.
+Reasoning is a subsystem within a running Skynvættr instance, not the whole entity itself.
 
-Skynvættr may use multiple reasoning components.
+A Skynvættr instance may use multiple reasoning components.
 
 ```mermaid
 flowchart TD
@@ -456,7 +456,7 @@ flowchart LR
 
 ### Capability
 
-A **Capability** describes something Skynvættr is allowed and able to do in semantic terms.
+A **Capability** describes something a Skynvættr instance is allowed and able to do in semantic terms.
 
 Examples:
 
@@ -632,14 +632,14 @@ Several concepts remain intentionally unresolved:
 - Should "mind" become a concrete abstraction or remain descriptive terminology?
 - How should reasoning components declare the context they require?
 - How should capabilities express permissions, risk, and reversibility?
-- How should Skynvættr distinguish externally assigned goals from internally generated drives?
-- How should multiple Skynvættr systems communicate or share information, if that becomes useful?
+- How should a Skynvættr instance distinguish externally assigned goals from internally generated drives?
+- How should multiple Skynvættr instances communicate or share information, if that becomes useful?
 
 These questions should be answered through implementation and experiments rather than prematurely fixed in the public API.
 
 ## Summary
 
-The central architectural idea is that Skynvættr is the complete persistent loop:
+The central architectural idea is that a running Skynvættr instance is the complete persistent loop:
 
 ```mermaid
 flowchart LR
@@ -654,6 +654,6 @@ flowchart LR
 
 An LLM is not Skynvættr. Home Assistant is not Skynvættr. A memory store is not Skynvættr.
 
-They may all participate in Skynvættr.
+They may all participate in a Skynvættr instance.
 
-Skynvættr brings sensing, perception, persistent internal state, reasoning, and action together into one continuously existing artificial system while keeping those concerns separable and composable.
+The Skynvættr runtime brings sensing, perception, persistent internal state, reasoning, and action together so that each running instance forms one continuously existing artificial entity while keeping those concerns separable and composable.
