@@ -1,6 +1,6 @@
 # Skynvættr
 
-**Skynvættr** (pronounced roughly **“SKÜN-vettr”**) is an experimental persistent artificial system that perceives its environment through structured signals, builds contextual understanding over time, and is intended to interact with that environment through extensible mechanisms.
+**Skynvættr** (pronounced roughly **“SKÜN-vettr”**) is a runtime for persistent artificial entities. Each running Skynvættr instance represents such an entity: a continuously existing artificial system that perceives its environment through structured signals, builds contextual understanding over time, and is intended to interact with that environment through extensible mechanisms.
 
 The name combines Old Norse *skyn* — sense, perception, understanding — with *vættr* — a being or entity.
 
@@ -8,7 +8,7 @@ The name combines Old Norse *skyn* — sense, perception, understanding — with
 
 ## Idea
 
-Most AI systems are invoked to answer a request and then disappear. Skynvættr explores a different model: a persistent artificial system that exists continuously, receives observations from an evolving environment, maintains context across time, and can eventually influence that environment through explicitly defined mechanisms.
+Most AI systems are invoked to answer a request and then disappear. Skynvættr explores a different model: each running instance is a persistent artificial entity that exists continuously, receives observations from an evolving environment, maintains context across time, and can eventually influence that environment through explicitly defined mechanisms.
 
 The core idea is intentionally domain-independent. A signal could originate from a physical sensor, an application, infrastructure telemetry, an event stream, an API, or any other observable source.
 
@@ -31,7 +31,7 @@ environment
 
 ## Design goals
 
-Skynvættr aims to:
+Skynvættr aims to provide a foundation where each running instance can:
 
 - ingest heterogeneous signals through well-defined channels;
 - preserve signal history and current state;
@@ -41,7 +41,7 @@ Skynvættr aims to:
 - remain independent of any specific physical environment or integration platform;
 - expose extensible mechanisms for taking actions in the environment.
 
-Skynvættr is an open-ended approach to building a sensing artificial being that can perceive an environment, develop an understanding of it over time, and interact with it through available mechanisms. The project will draw on machine learning and neural-network-based components, likely including LLMs or LLM-like models, for perception, reasoning, interpretation, and interaction.
+Skynvættr is an open-ended approach to building sensing artificial beings, where each running instance can perceive an environment, develop an understanding of it over time, and interact with it through available mechanisms. The project will draw on machine learning and neural-network-based components, likely including LLMs or LLM-like models, for perception, reasoning, interpretation, and interaction.
 
 ## Terminology
 
