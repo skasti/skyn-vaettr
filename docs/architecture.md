@@ -344,7 +344,7 @@ flowchart LR
     EV --> BUS
 ```
 
-This differs from the earlier Skippy approach where a comparatively global perception interval could be adjusted to make the agent "wake up" more or less frequently. Skynvættr should instead let each subsystem express its own timing requirements.
+This differs from earlier prototype approaches where a comparatively global perception interval could be adjusted to make the entity "wake up" more or less frequently. Skynvættr should instead let each subsystem express its own timing requirements.
 
 Attention still matters, but it should primarily affect **priority and allocation of processing resources**, not continuously rewrite subsystem intervals.
 
@@ -638,9 +638,9 @@ flowchart TB
 
 Home Assistant may be an important early integration because it provides a rich environment for experimentation, but it must remain an adapter around the core model.
 
-## Relationship to the Skippy experiments
+## Lessons from earlier experiments
 
-Several architectural ideas were explored earlier in the Skippy project and motivate the current Skynvættr model.
+Several architectural ideas were explored in earlier experiments and prototypes and motivate the current Skynvættr model.
 
 These include:
 
@@ -653,7 +653,7 @@ These include:
 - multiple specialized reasoning components or "subminds";
 - explicit tools for affecting the environment.
 
-Skynvættr should preserve the useful concepts discovered through those experiments while removing assumptions that belong specifically to Skippy's implementation, n8n, Home Assistant, or any particular model provider.
+Skynvættr should preserve the useful concepts discovered through those experiments while removing assumptions that belonged specifically to the prototype implementations, orchestration tools, environment integrations, or any particular model provider.
 
 ## Tentative runtime decomposition
 
