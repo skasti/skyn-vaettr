@@ -385,14 +385,14 @@ flowchart LR
     D[Drives / Internal state]
     ATT[Attention]
     R[Reasoning]
-    I[Intentions]
+    B[Behaviour]
 
     C --> ATT
     D --> ATT
     ATT --> R
     C --> R
     D --> R
-    R --> I
+    R --> B
 ```
 
 For example, high uncertainty about an important belief may cause the system to increase attention toward signals capable of resolving that uncertainty.
@@ -436,25 +436,29 @@ Different components may specialize in:
 
 A higher-level "mind" abstraction may eventually coordinate these components, but that terminology remains provisional.
 
-## Intentions, capabilities, and effectors
+## Behaviour, capabilities, and effectors
 
-The action side should be as explicit and general as the sensing side.
+The action side should remain explicit and general without prescribing where behaviour originates internally.
 
 ```mermaid
 flowchart LR
-    R[Reasoning]
-    I[Intent]
+    P[Internal processing]
+    B[Behaviour / requested outcome]
     C[Capability]
     E[Effector]
     A[Action]
     ENV[Environment]
 
-    R --> I
-    I --> C
+    P --> B
+    B --> C
     C --> E
     E --> A
     A --> ENV
 ```
+
+The node labelled `Behaviour / requested outcome` is intentionally representation-neutral. It may eventually correspond to intent, a goal, a plan, a policy result, a learned action proposal, or something produced by a different branch of the system entirely.
+
+Skynvættr should not require an explicit `Intent` object merely to connect internal processing to action.
 
 ### Capability
 
@@ -483,27 +487,25 @@ Examples might include:
 - a shell or operating-system integration;
 - an external API.
 
-The world model and reasoning layers should not need to know the implementation details of these integrations.
+Internal processing should not need to know the implementation details of these integrations.
 
 ### Example
 
 ```mermaid
 sequenceDiagram
-    participant M as Mind / Reasoning
+    participant P as Internal processing
     participant C as Capability layer
     participant E as Home Assistant effector
     participant W as Environment
 
-    M->>C: Intent: reduce_temperature(loft)
+    P->>C: Request an environment change
     C->>C: Validate capability and policy
-    C->>E: Set ventilation to appropriate level
-    E->>W: Execute environment-specific action
-    W-->>E: Result
-    E-->>C: Action outcome
-    C-->>M: Outcome becomes new evidence
+    C->>E: Perform environment-specific operation
+    E->>W: Execute action
+    W-->>E: Environment changes / outcome
 ```
 
-Action outcomes should return to the perception/world-model loop as evidence. An action being requested does not imply that it succeeded.
+The consequences of actions should remain observable so that later processing can evaluate what happened and adapt. The architecture does not yet prescribe the exact feedback representation or route.
 
 ## Integration boundary
 
@@ -634,6 +636,7 @@ Several concepts remain intentionally unresolved:
 - Should "mind" become a concrete abstraction or remain descriptive terminology?
 - How should reasoning components declare the context they require?
 - How should capabilities express permissions, risk, and reversibility?
+- Should intent become an explicit runtime abstraction at all, and if so where should it originate?
 - How should a Skynvættr instance distinguish externally assigned goals from internally generated drives?
 - How should multiple Skynvættr instances communicate or share information, if that becomes useful?
 
