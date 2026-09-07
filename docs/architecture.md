@@ -39,8 +39,8 @@ The architecture is guided by a few core principles:
 9. **Subsystem cadence should be stable**  
    Individual sensing, perception, maintenance, and reasoning subsystems may each operate on their own cadence. These intervals should generally be explicit and stable rather than continuously adjusted as a proxy for attention.
 
-10. **Scarce external resources are budgeted separately**  
-    Calls to external or costly resources such as hosted model APIs should be subject to rate limits, quotas, concurrency controls, and prioritization independently of the cadence of the subsystem requesting them.
+10. **External constraints should remain external**  
+    External services may impose their own operational constraints. These should be handled at the integration or resource boundary without coupling the cadence of internal subsystems directly to a particular provider.
 
 ## The continuous loop
 
@@ -357,45 +357,12 @@ For example, attention may influence:
 - whether an unresolved question deserves an external model call;
 - which tasks may consume a constrained external resource.
 
-### External resource rate limiting
+### External service constraints
 
-External resources such as hosted LLM APIs are a separate concern from subsystem cadence.
+External services may impose limits or temporary availability constraints of their own. Skynvættr should treat these as properties of the integration boundary rather than as timing rules for the entity itself.
 
-A subsystem should be able to continue operating at its normal rhythm even when a requested external resource is temporarily unavailable or rate-limited. Requests for those resources should pass through an explicit resource-budgeting layer.
+A subsystem should therefore be able to retain its own cadence even when an external dependency cannot immediately satisfy a request. The exact mechanisms for handling such constraints are intentionally left to later design.
 
-```mermaid
-flowchart LR
-    P1[Perception subsystem]
-    P2[Planning subsystem]
-    P3[Interaction subsystem]
-
-    Q[External resource scheduler]
-    LIMIT[Rate limits / quotas]
-    PRI[Priority / budget policy]
-    API[Hosted model API]
-
-    P1 --> Q
-    P2 --> Q
-    P3 --> Q
-    LIMIT --> Q
-    PRI --> Q
-    Q --> API
-```
-
-The scheduler may eventually account for:
-
-- provider rate limits;
-- token or monetary budgets;
-- maximum concurrency;
-- per-entity or per-subsystem quotas;
-- priority;
-- deadlines or freshness;
-- retry/backoff policy;
-- fallback to local models or other reasoning components.
-
-This separation is important: **the rate at which the artificial entity senses and processes its world should not be dictated directly by the rate limits of OpenAI or any other external provider.**
-
-A constrained external model may delay, defer, downgrade, or reroute a reasoning request without changing the underlying cadence of the subsystem that produced it.
 
 ## World model
 
@@ -647,7 +614,7 @@ These include:
 - structured signal policies;
 - observation weighting using dimensions such as importance, reliability, significance, and confidence;
 - historical observations and contextual state;
-- adaptive perception intervals as an experimental mechanism, with the lesson that Skynvættr should instead give individual subsystems their own mostly stable cadences and handle scarce external resources through explicit rate limiting and budgeting;
+- adaptive perception intervals as an experimental mechanism, with the lesson that Skynvættr should instead give individual subsystems their own mostly stable cadences while keeping external service constraints separate from those internal rhythms;
 - stored thoughts and unresolved questions;
 - internal impulses and mood-like state;
 - multiple specialized reasoning components or "subminds";
