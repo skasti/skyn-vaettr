@@ -36,6 +36,12 @@ The architecture is guided by a few core principles:
 8. **Uncertainty is expected**  
    Different sources may disagree, observations may be incomplete, and beliefs should be able to represent confidence rather than forcing premature certainty.
 
+9. **Subsystem cadence should be stable**  
+   Individual sensing, perception, maintenance, and reasoning subsystems may each operate on their own cadence. These intervals should generally be explicit and stable rather than continuously adjusted as a proxy for attention.
+
+10. **Scarce external resources are budgeted separately**  
+    Calls to external or costly resources such as hosted model APIs should be subject to rate limits, quotas, concurrency controls, and prioritization independently of the cadence of the subsystem requesting them.
+
 ## The continuous loop
 
 At the highest level, a Skynvættr entity participates in a continuous feedback loop with its environment.
@@ -315,41 +321,81 @@ Policies may consider:
 
 This allows most uninteresting changes to be processed without invoking higher-cost reasoning.
 
-## Attention and adaptive perception
+## Scheduling, cadence, and resource budgets
 
-A persistent entity should not need to observe every part of its environment at the same rate.
+Skynvættr should not depend on one global perception interval.
 
-Attention represents how much processing or observation effort should be directed toward a subject, source, channel, question, or region of the world model.
+Different subsystems may have different natural cadences. A temperature source might be sampled periodically, a local classifier may run frequently, a maintenance process may run much less often, and an event-driven source may have no polling interval at all.
+
+Where an interval is appropriate, the default model is that it belongs to the individual subsystem and remains as stable as practical.
 
 ```mermaid
-flowchart TD
-    CALM[Environment appears stable]
-    SLOW[Lower observation frequency]
-    EVENT[Unexpected or significant observation]
-    HIGH[Increase attention]
-    FAST[Observe relevant signals more frequently]
-    EVID[Gather new evidence]
-    RESOLVE{Resolved?}
+flowchart LR
+    subgraph RUNTIME[Skynvættr runtime]
+        S1[Sensor subsystem<br/>stable cadence A]
+        S2[Perception subsystem<br/>stable cadence B]
+        S3[Maintenance subsystem<br/>stable cadence C]
+        EV[Event-driven subsystem<br/>on signal]
+    end
 
-    CALM --> SLOW
-    SLOW --> EVENT
-    EVENT --> HIGH
-    HIGH --> FAST
-    FAST --> EVID
-    EVID --> RESOLVE
-    RESOLVE -- No --> HIGH
-    RESOLVE -- Yes --> CALM
+    S1 --> BUS[Signals / observations]
+    S2 --> BUS
+    S3 --> BUS
+    EV --> BUS
 ```
 
-This reflects an important lesson from the Skippy experiments: perception frequency itself can be part of the entity's behavior.
+This differs from the earlier Skippy approach where a comparatively global perception interval could be adjusted to make the agent "wake up" more or less frequently. Skynvættr should instead let each subsystem express its own timing requirements.
 
-Attention should eventually be able to affect more than timing. It may influence:
+Attention still matters, but it should primarily affect **priority and allocation of processing resources**, not continuously rewrite subsystem intervals.
 
-- which signals are sampled;
-- which histories are loaded;
-- which model is used;
-- how much reasoning budget is allocated;
-- whether an unresolved question should be actively investigated.
+For example, attention may influence:
+
+- which pending observations are processed first;
+- which histories or contextual data are loaded;
+- which reasoning component is selected;
+- how much inference budget is allocated;
+- whether an unresolved question deserves an external model call;
+- which tasks may consume a constrained external resource.
+
+### External resource rate limiting
+
+External resources such as hosted LLM APIs are a separate concern from subsystem cadence.
+
+A subsystem should be able to continue operating at its normal rhythm even when a requested external resource is temporarily unavailable or rate-limited. Requests for those resources should pass through an explicit resource-budgeting layer.
+
+```mermaid
+flowchart LR
+    P1[Perception subsystem]
+    P2[Planning subsystem]
+    P3[Interaction subsystem]
+
+    Q[External resource scheduler]
+    LIMIT[Rate limits / quotas]
+    PRI[Priority / budget policy]
+    API[Hosted model API]
+
+    P1 --> Q
+    P2 --> Q
+    P3 --> Q
+    LIMIT --> Q
+    PRI --> Q
+    Q --> API
+```
+
+The scheduler may eventually account for:
+
+- provider rate limits;
+- token or monetary budgets;
+- maximum concurrency;
+- per-entity or per-subsystem quotas;
+- priority;
+- deadlines or freshness;
+- retry/backoff policy;
+- fallback to local models or other reasoning components.
+
+This separation is important: **the rate at which the artificial entity senses and processes its world should not be dictated directly by the rate limits of OpenAI or any other external provider.**
+
+A constrained external model may delay, defer, downgrade, or reroute a reasoning request without changing the underlying cadence of the subsystem that produced it.
 
 ## World model
 
@@ -601,7 +647,7 @@ These include:
 - structured signal policies;
 - observation weighting using dimensions such as importance, reliability, significance, and confidence;
 - historical observations and contextual state;
-- adaptive perception intervals;
+- adaptive perception intervals as an experimental mechanism, with the lesson that Skynvættr should instead give individual subsystems their own mostly stable cadences and handle scarce external resources through explicit rate limiting and budgeting;
 - stored thoughts and unresolved questions;
 - internal impulses and mood-like state;
 - multiple specialized reasoning components or "subminds";
