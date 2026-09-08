@@ -236,6 +236,132 @@ Historical information enables interpretation of:
 
 A current value alone is often insufficient for useful perception.
 
+### Learned signal representations
+
+Signals should remain semantically meaningful, inspectable records of what was sensed. Models may, however, derive **learned representations** from signals in order to discover useful relationships that are difficult or undesirable to encode manually.
+
+This is analogous to learned token embeddings in language models, but sensor data should not be forced into a text-like token model. In particular, many sensor values are continuous and temporal relationships are often more important than the isolated value itself.
+
+A model may therefore encode a signal using some combination of:
+
+- channel or signal type;
+- source;
+- associated entity;
+- value or event payload;
+- timestamp or temporal encoding;
+- confidence, reliability, quality, and other metadata;
+- surrounding signal history or model-specific context.
+
+Conceptually:
+
+```text
+Signal + context -> encoder -> learned representation
+```
+
+For a single signal, an encoder might produce a vector representation:
+
+```text
+temperature(room, 22.4 C, time=t, ...)
+        |
+        v
+      encoder
+        |
+        v
+[ learned latent representation ]
+```
+
+For continuous values, the default assumption should be that models can encode the value directly rather than requiring arbitrary discretization into token-like buckets. Discretization may still be useful for particular models or experiments, but it is a modelling decision rather than a property of the signal itself.
+
+#### Temporal representations
+
+Many useful properties of sensed environments are expressed by change over time rather than by individual readings.
+
+For example:
+
+```text
+21 -> 22 -> 23 -> 24 -> 25 C over 20 minutes
+```
+
+contains information that is not represented by the final value alone.
+
+Models should therefore be able to encode **time windows or sequences of signals** into learned representations as well as individual signals:
+
+```mermaid
+flowchart LR
+    H[Signal history / time window]
+    E[Signal / temporal encoder]
+    Z[Learned representation]
+    M[Perception or prediction model]
+
+    H --> E
+    E --> Z
+    Z --> M
+```
+
+Such a representation may capture correlations between channels, entities, rates of change, recurring situations, or other latent structure without requiring those concepts to be predefined as explicit fields.
+
+The architecture must not assign fixed human meanings to individual latent dimensions. A vector whose dimensions are manually defined as temperature, humidity, presence, and so on is a useful feature vector, but it is not the same thing as a learned latent representation. Learned representations should remain free to organize information according to what is useful for the training objective.
+
+#### Raw signals remain canonical
+
+Learned representations are **derived model artifacts**, not replacements for signal history.
+
+The runtime should preserve the underlying signals and enough metadata to reconstruct the model input independently of any particular encoder. This is important because the meaning of a learned representation may change when:
+
+- an encoder is retrained;
+- model architecture changes;
+- input normalization changes;
+- available channels change;
+- a new training objective produces a better representation.
+
+Persisted embeddings or latent states should therefore identify the model and representation version that produced them when they are stored at all.
+
+Conceptually:
+
+```text
+Signal history                    model-specific artifacts
+      |                                     |
+      +----> encoder v1 ----> embedding v1  |
+      |                                     |
+      +----> encoder v2 ----> embedding v2  |
+      |                                     |
+      +----> other model -------------------+
+```
+
+This separation allows future models to reinterpret historical experience without losing information through an earlier representation choice.
+
+#### Learning from experience
+
+The signal history also provides a natural basis for self-supervised and other forms of representation learning.
+
+Useful training objectives may include, for example:
+
+- predicting future signals from a preceding time window;
+- reconstructing masked or missing signals;
+- predicting one channel from correlated channels;
+- distinguishing similar and dissimilar situations;
+- learning representations that are useful for downstream perception, prediction, or control tasks.
+
+These are examples rather than prescribed objectives. The important architectural property is that training can sample historical experience independently of how signals are stored.
+
+When episode-based training support is introduced, an episode should describe the experience to be sampled rather than replace the underlying signal history. An episode may identify a model instance, a time interval, relevant channels or signals, and model-specific metadata. A trainer can then select episodes and resolve their actual inputs from the canonical signal history.
+
+```mermaid
+flowchart LR
+    ES[Episode metadata]
+    SH[Signal history]
+    T[Trainer]
+    ENC[Encoder / model]
+    LOSS[Training objective]
+
+    ES --> T
+    SH --> T
+    T --> ENC
+    ENC --> LOSS
+```
+
+This keeps experience selection, signal storage, learned representation, and training strategy separate. It also allows several models to learn from the same recorded experience using different encoders or objectives.
+
 ## Perception
 
 The perception layer turns raw signals and context into observations.
