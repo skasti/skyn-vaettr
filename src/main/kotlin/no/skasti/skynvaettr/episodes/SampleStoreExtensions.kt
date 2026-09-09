@@ -18,7 +18,7 @@ fun SampleStore.get(episode: EpisodeDefinition): EpisodeData {
     val samples = get(
         episode.from,
         episode.to,
-        signalIds,
+        *signalIds.toTypedArray(),
     )
 
     val grouped = samples.groupBy { it.timestamp }
