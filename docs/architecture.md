@@ -170,6 +170,8 @@ A long-term goal is for Skynvættr to be able to communicate or otherwise repres
 
 Whether concepts such as intent, goal, plan, expectation, or action become explicit core abstractions should be determined through experiments rather than fixed now.
 
+For the detailed signal model, see [Signals and samples](signals.md). For bounded experience used in training and replay, see [Episodes](episodes.md).
+
 ## Signals, samples, entities, and sources
 
 The signal model should preserve stable signal identity while allowing integrations to describe signals through open-ended metadata.
