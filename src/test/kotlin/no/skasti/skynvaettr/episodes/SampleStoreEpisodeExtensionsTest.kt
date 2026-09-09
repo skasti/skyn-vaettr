@@ -85,7 +85,7 @@ class SampleStoreEpisodeExtensionsTest {
         override fun get(
             after: Instant,
             before: Instant,
-            vararg signals: SignalId,
+            signals: Collection<SignalId>,
         ): List<Sample<*>> {
             this.after = after
             this.before = before
