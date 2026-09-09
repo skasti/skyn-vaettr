@@ -100,16 +100,16 @@ Its core query is:
 fun get(
     after: Instant,
     before: Instant,
-    vararg signals: SignalId,
+    signals: Collection<SignalId> = emptyList(),
 ): List<Sample<*>>
 ```
 
-The interval is half-open: `[after, before)`. Results are returned in chronological order. If no signal ids are supplied, the query applies to all signals.
+The interval is half-open: `[after, before)`. Results are returned in chronological order. If the signal-id collection is empty, the query applies to all signals. A collection is used rather than `vararg SignalId` because Kotlin prohibits value classes such as `SignalId` as vararg element types.
 
 A convenience overload uses the current instant as `before`:
 
 ```kotlin
-sampleStore.get(after, indoorTemperature.id, outdoorTemperature.id)
+sampleStore.get(after, listOf(indoorTemperature.id, outdoorTemperature.id))
 ```
 
 The store places no uniqueness constraint on timestamps. All of the following are valid:
