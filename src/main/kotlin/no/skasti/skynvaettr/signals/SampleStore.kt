@@ -6,7 +6,7 @@ import java.time.Instant
  * Provides access to canonical historical [Sample] records.
  *
  * Implementations must return samples in chronological order for the half-open interval
- * [after, before). An empty signal-id collection means all signals.
+ * [after, before). Supplying no signal ids means all signals.
  *
  * SampleStore deliberately imposes no uniqueness constraint on timestamps. Multiple samples
  * may share the same timestamp, including multiple samples for the same [SignalId]. No
@@ -16,12 +16,12 @@ interface SampleStore {
     fun get(
         after: Instant,
         before: Instant,
-        signals: Collection<SignalId> = emptyList(),
+        vararg signals: SignalId,
     ): List<Sample<*>>
 
     fun get(
         after: Instant,
-        signals: Collection<SignalId> = emptyList(),
+        vararg signals: SignalId,
     ): List<Sample<*>> =
-        get(after, Instant.now(), signals)
+        get(after, Instant.now(), *signals)
 }
