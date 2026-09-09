@@ -158,7 +158,7 @@ Skynvættr therefore does not currently introduce `State` as a core signal abstr
 Model-specific transformations belong later in the pipeline:
 
 ```text
-SignalStore
+SampleStore
     |
     v
 EpisodeDefinition
@@ -193,12 +193,12 @@ Keeping these layers separate lets multiple models train from the same underlyin
 
 ## Episode storage
 
-The intended long-term architecture is that an `EpisodeStore` stores episode definitions or episode metadata, while a `SignalStore` retains canonical historical samples.
+The intended long-term architecture is that an `EpisodeStore` stores episode definitions or episode metadata, while a `SampleStore` provides access to canonical historical samples.
 
 A trainer can then:
 
 1. select an episode;
-2. resolve its signal history from the `SignalStore`;
+2. query the relevant samples from the `SampleStore` using the episode time range and signal ids;
 3. materialize an `EpisodeData`;
 4. apply model-specific preprocessing;
 5. train or evaluate the model.
@@ -209,7 +209,7 @@ Conceptually:
 EpisodeStore ----> EpisodeDefinition
                          |
                          v
-SignalStore ------> materialization
+SampleStore ------> materialization
                          |
                          v
                     EpisodeData
