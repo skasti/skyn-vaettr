@@ -5,15 +5,14 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import no.skasti.skynvaettr.signals.Signal
-import no.skasti.skynvaettr.signals.SignalId
 
 class EpisodeDataTest {
     private val indoor = Signal<Double>(
-        SignalId("sensor.indoor.temperature"),
+        "sensor.indoor.temperature",
         mapOf("device_class" to "temperature", "unit" to "°C"),
     )
     private val outdoor = Signal<Double>(
-        SignalId("sensor.outdoor.temperature"),
+        "sensor.outdoor.temperature",
         mapOf("device_class" to "temperature", "unit" to "°C"),
     )
 
