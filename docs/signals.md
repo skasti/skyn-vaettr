@@ -1,9 +1,11 @@
 # Signals and samples
 
-Skynvættr represents sensed data using two deliberately small core abstractions:
+Skynvættr represents sensed data using a few deliberately small core abstractions:
 
+- `SignalId` is the stable identity of a signal.
 - `Signal<T>` describes **what can be sampled**.
 - `Sample<T>` records **one value observed for a signal at a particular instant**.
+- `SampleStore` provides generic access to historical samples.
 
 Keeping these concepts separate gives the runtime stable signal identity and rich semantic metadata without conflating a signal definition with any particular observed value.
 
@@ -15,7 +17,7 @@ For example:
 
 ```kotlin
 val temperature = Signal<Double>(
-    name = "sensor.kontor_presence_temperature",
+    id = SignalId("sensor.kontor_presence_temperature"),
     metadata = mapOf(
         "state_class" to "measurement",
         "unit_of_measurement" to "°C",
@@ -25,9 +27,11 @@ val temperature = Signal<Double>(
 )
 ```
 
-The signal name is its identity. Two `Signal` instances with the same name are considered equal even if their metadata differs.
+`SignalId` is a small value type rather than a raw string so APIs can distinguish signal identity from arbitrary textual metadata. Two `Signal` instances with the same id are considered equal even if their metadata differs.
 
-This means signal names must be globally stable within the runtime. Metadata may evolve, but changing the name means referring to a different signal.
+Signal ids must be globally stable within the runtime. Metadata may evolve, but changing the id means referring to a different signal.
+
+For convenience, `Signal` also accepts a string constructor, but APIs that exchange identity without the full signal definition should use `SignalId`.
 
 ## Metadata
 
@@ -85,6 +89,37 @@ Signal definitions + Samples
 ```
 
 The raw signal history should remain independent of any particular model representation so that historical experience can be reinterpreted when encoders, architectures, normalization strategies, or training objectives change.
+
+## SampleStore
+
+`SampleStore` is the generic source of historical samples. It deliberately knows nothing about episodes, training, resampling, or model state.
+
+Its core query is:
+
+```kotlin
+fun get(
+    after: Instant,
+    before: Instant,
+    vararg signals: SignalId,
+): List<Sample<*>>
+```
+
+The interval is half-open: `[after, before)`. Results are returned in chronological order. If no signal ids are supplied, the query applies to all signals.
+
+A convenience overload uses the current instant as `before`:
+
+```kotlin
+sampleStore.get(after, indoorTemperature.id, outdoorTemperature.id)
+```
+
+The store places no uniqueness constraint on timestamps. All of the following are valid:
+
+- multiple different signals sampled at the same timestamp;
+- multiple samples for the same signal at the same timestamp;
+- irregular sampling intervals;
+- sparse or bursty signals.
+
+`SampleStore` must not silently deduplicate these records or infer state from them. Likewise, alignment, interpolation, aggregation, and episode construction belong to later layers.
 
 ## Learned representations
 
