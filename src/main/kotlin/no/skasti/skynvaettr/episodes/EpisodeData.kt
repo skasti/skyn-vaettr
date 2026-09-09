@@ -33,8 +33,8 @@ class EpisodeData(
         }
 
         this.timestamps.forEachIndexed { index, timestamp ->
-            require(!timestamp.isBefore(definition.from) && !timestamp.isAfter(definition.to)) {
-                "Episode timestamp at row " + index + " is outside the episode time range"
+            require(!timestamp.isBefore(definition.from) && timestamp.isBefore(definition.to)) {
+                "Episode timestamp at row " + index + " is outside the episode time range [from, to)"
             }
 
             if (index > 0) {
