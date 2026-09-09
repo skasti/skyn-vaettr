@@ -31,7 +31,7 @@ val temperature = Signal<Double>(
 
 Signal ids must be globally stable within the runtime. Metadata may evolve, but changing the id means referring to a different signal.
 
-`Signal` requires an explicit `SignalId`. Keeping that conversion explicit avoids confusing arbitrary strings with stable signal identity and also avoids JVM signature collisions caused by `SignalId` being an inline value class.
+`SignalId` is a regular value object rather than an inline class. This keeps the strong identity type without letting JVM representation details constrain the public API. `Signal` also accepts a string constructor for convenience.
 
 ## Metadata
 
@@ -100,16 +100,16 @@ Its core query is:
 fun get(
     after: Instant,
     before: Instant,
-    signals: Collection<SignalId> = emptyList(),
+    vararg signals: SignalId,
 ): List<Sample<*>>
 ```
 
-The interval is half-open: `[after, before)`. Results are returned in chronological order. If the signal-id collection is empty, the query applies to all signals. A collection is used rather than `vararg SignalId` because Kotlin prohibits value classes such as `SignalId` as vararg element types.
+The interval is half-open: `[after, before)`. Results are returned in chronological order. If no signal ids are supplied, the query applies to all signals.
 
 A convenience overload uses the current instant as `before`:
 
 ```kotlin
-sampleStore.get(after, listOf(indoorTemperature.id, outdoorTemperature.id))
+sampleStore.get(after, indoorTemperature.id, outdoorTemperature.id)
 ```
 
 The store places no uniqueness constraint on timestamps. All of the following are valid:
