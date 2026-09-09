@@ -8,9 +8,9 @@ import kotlin.test.assertNotEquals
 
 class SignalTest {
     @Test
-    fun `signal defines a uniquely named typed value with metadata`() {
+    fun `signal defines a uniquely identified typed value with metadata`() {
         val signal = Signal<Double>(
-            name = "sensor.kontor_presence_temperature",
+            id = SignalId("sensor.kontor_presence_temperature"),
             metadata = mapOf(
                 "state_class" to "measurement",
                 "unit_of_measurement" to "°C",
@@ -19,8 +19,16 @@ class SignalTest {
             ),
         )
 
+        assertEquals(SignalId("sensor.kontor_presence_temperature"), signal.id)
         assertEquals("sensor.kontor_presence_temperature", signal.name)
         assertEquals("temperature", signal.metadata["device_class"])
+    }
+
+    @Test
+    fun `string constructor creates a signal id`() {
+        val signal = Signal<Double>("temperature")
+
+        assertEquals(SignalId("temperature"), signal.id)
     }
 
     @Test
@@ -34,12 +42,13 @@ class SignalTest {
     }
 
     @Test
-    fun `signal names must not be blank`() {
+    fun `signal ids must not be blank`() {
+        assertFailsWith<IllegalArgumentException> { SignalId(" ") }
         assertFailsWith<IllegalArgumentException> { Signal<Double>(" ") }
     }
 
     @Test
-    fun `signal identity is its name rather than metadata`() {
+    fun `signal identity is its id rather than metadata`() {
         val a = Signal<Double>("temperature", mapOf("unit" to "°C"))
         val b = Signal<Double>("temperature", mapOf("unit" to "K"))
         val c = Signal<Double>("other-temperature", mapOf("unit" to "°C"))
