@@ -24,7 +24,7 @@ class EpisodeDataTest {
         val definition = EpisodeDefinition(from, to, listOf(indoor, outdoor))
         val data = EpisodeData(
             definition = definition,
-            timestamps = listOf(from, to),
+            timestamps = listOf(from, from.plusSeconds(60)),
             values = listOf(
                 listOf(21.5, 9.0),
                 listOf(21.7, 9.2),
