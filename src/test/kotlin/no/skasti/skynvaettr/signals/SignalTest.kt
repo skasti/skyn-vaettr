@@ -27,7 +27,7 @@ class SignalTest {
     @Test
     fun `signal metadata is copied from caller owned map`() {
         val metadata = mutableMapOf<String, Any>("unit" to "°C")
-        val signal = Signal<Double>(SignalId("temperature"), metadata)
+        val signal = Signal<Double>("temperature", metadata)
 
         metadata["unit"] = "K"
 
@@ -37,14 +37,14 @@ class SignalTest {
     @Test
     fun `signal ids must not be blank`() {
         assertFailsWith<IllegalArgumentException> { SignalId(" ") }
-        assertFailsWith<IllegalArgumentException> { Signal<Double>(SignalId(" ")) }
+        assertFailsWith<IllegalArgumentException> { Signal<Double>(" ") }
     }
 
     @Test
     fun `signal identity is its id rather than metadata`() {
-        val a = Signal<Double>(SignalId("temperature"), mapOf("unit" to "°C"))
-        val b = Signal<Double>(SignalId("temperature"), mapOf("unit" to "K"))
-        val c = Signal<Double>(SignalId("other-temperature"), mapOf("unit" to "°C"))
+        val a = Signal<Double>("temperature", mapOf("unit" to "°C"))
+        val b = Signal<Double>("temperature", mapOf("unit" to "K"))
+        val c = Signal<Double>("other-temperature", mapOf("unit" to "°C"))
 
         assertEquals(a, b)
         assertNotEquals(a, c)
@@ -52,7 +52,7 @@ class SignalTest {
 
     @Test
     fun `sample binds a typed signal value to an explicit timestamp`() {
-        val signal = Signal<Double>(SignalId("sensor.kontor_presence_temperature"))
+        val signal = Signal<Double>("sensor.kontor_presence_temperature")
         val timestamp = Instant.parse("2026-09-09T11:00:00Z")
 
         val sample = Sample(signal, 25.9, timestamp)
