@@ -10,7 +10,7 @@ The episode model deliberately separates:
 
 ## EpisodeDefinition
 
-`EpisodeDefinition` describes a time interval and the ordered signals that belong to an episode:
+`EpisodeDefinition` describes a half-open time interval `[from, to)` and the ordered signals that belong to an episode:
 
 ```kotlin
 val definition = EpisodeDefinition(
@@ -123,6 +123,28 @@ A separate materialization or preprocessing step must decide whether to use stra
 That policy can materially change what a model learns, so it must remain explicit rather than being hidden inside the episode container.
 
 By the time an `EpisodeData` instance is constructed, the rows are assumed to already be aligned.
+
+## Materializing from SampleStore
+
+The `episodes` package provides a convenience extension:
+
+```kotlin
+val data: EpisodeData = sampleStore.get(definition)
+```
+
+This keeps `SampleStore` itself generic and unaware of episodes while letting the episode layer adapt stored samples into `EpisodeData`.
+
+The default materializer is intentionally strict. For every timestamp returned by the store, it requires exactly one sample for each signal in the episode definition. It does not:
+
+- interpolate missing signals;
+- carry forward previous values;
+- aggregate windows;
+- deduplicate repeated samples;
+- choose between duplicate samples for the same signal and timestamp.
+
+If the raw samples do not already form a rectangular time series, materialization fails rather than silently choosing an alignment policy.
+
+Future alignment or resampling strategies should be introduced explicitly, for example as separate materializers or policies, so that their effect on training data remains visible and testable.
 
 ## Validation
 
