@@ -10,11 +10,13 @@ class Signal<T>(
     val id: SignalId,
     metadata: Map<String, Any> = emptyMap(),
 ) {
+    constructor(
+        id: String,
+        metadata: Map<String, Any> = emptyMap(),
+    ) : this(SignalId(id), metadata)
+
     val metadata: Map<String, Any> = metadata.toMap()
 
-    /**
-     * Human-readable view of the signal identity.
-     */
     val name: String
         get() = id.value
 
