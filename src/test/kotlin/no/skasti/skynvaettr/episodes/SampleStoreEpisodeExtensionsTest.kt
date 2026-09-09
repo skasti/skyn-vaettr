@@ -10,8 +10,8 @@ import no.skasti.skynvaettr.signals.Signal
 import no.skasti.skynvaettr.signals.SignalId
 
 class SampleStoreEpisodeExtensionsTest {
-    private val indoor = Signal<Double>(SignalId("sensor.indoor.temperature"))
-    private val outdoor = Signal<Double>(SignalId("sensor.outdoor.temperature"))
+    private val indoor = Signal<Double>("sensor.indoor.temperature")
+    private val outdoor = Signal<Double>("sensor.outdoor.temperature")
     private val from = Instant.parse("2026-09-09T10:00:00Z")
     private val middle = Instant.parse("2026-09-09T10:01:00Z")
     private val to = Instant.parse("2026-09-09T10:02:00Z")
@@ -85,7 +85,7 @@ class SampleStoreEpisodeExtensionsTest {
         override fun get(
             after: Instant,
             before: Instant,
-            signals: Collection<SignalId>,
+            vararg signals: SignalId,
         ): List<Sample<*>> {
             this.after = after
             this.before = before
