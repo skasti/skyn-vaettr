@@ -95,28 +95,38 @@ This is intentionally less specific than a pipeline of named cognitive objects. 
 
 ### Signal
 
-A **Signal** is a value, state, or event received from the environment through a defined channel.
+A **Signal** defines one uniquely named value that a Skynvættr can receive from its environment.
 
-Examples:
+For example, an integration might define:
 
-- a temperature reading;
-- a detected position;
-- a process becoming unavailable;
-- a camera classifier detecting an object;
-- an API returning a state;
-- an incoming event from a message bus.
+```text
+sensor.kontor_presence_temperature
+```
 
-A signal represents what a particular source reported, not necessarily objective truth.
+with metadata such as:
 
-A signal may carry metadata such as:
+```text
+state_class = measurement
+unit_of_measurement = °C
+device_class = temperature
+friendly_name = Kontor Presence Temperature
+```
 
-- timestamp;
-- source;
-- confidence;
-- reliability;
-- unit;
-- quality;
-- sequence or correlation information.
+The signal definition describes *what can be sampled*. It does not itself represent a value received at a particular point in time.
+
+The core deliberately keeps signal metadata open-ended rather than hard-coding semantic classifications such as channels. Integrations and later processing layers may attach whatever metadata is useful for their domain.
+
+### Sample
+
+A **Sample** is one value received for a Signal at a specific point in time.
+
+```text
+signal = sensor.kontor_presence_temperature
+value = 25.9
+timestamp = 2026-09-09T11:00:00Z
+```
+
+A Sample is intentionally temporally neutral. It records what was received and when, but does not imply that the value remains the current state until another sample arrives. Stateful, event-like, or impulse semantics may be introduced later if experiments show that the runtime needs to distinguish them explicitly.
 
 ### Observation
 
@@ -160,9 +170,9 @@ A long-term goal is for Skynvættr to be able to communicate or otherwise repres
 
 Whether concepts such as intent, goal, plan, expectation, or action become explicit core abstractions should be determined through experiments rather than fixed now.
 
-## Signals, entities, channels, and sources
+## Signals, samples, entities, and sources
 
-The signal model should provide semantic structure rather than treating environmental state as a flat collection of keys.
+The signal model should preserve stable signal identity while allowing integrations to describe signals through open-ended metadata.
 
 A tentative model is:
 
@@ -171,14 +181,13 @@ classDiagram
     class Environment
     class Source
     class Entity
-    class Channel
     class Signal
+    class Sample
 
     Environment "1" o-- "*" Source
     Environment "1" o-- "*" Entity
-    Source "1" --> "*" Signal : produces
-    Entity "1" o-- "*" Channel
-    Channel "1" --> "*" Signal : receives
+    Source "1" --> "*" Signal : defines
+    Signal "1" --> "*" Sample : sampled as
 ```
 
 ### Source
@@ -203,22 +212,11 @@ Within the runtime model, `Entity` refers to something in the environment that a
 
 Examples include a person, animal, room, machine, application, service, vehicle, or other meaningful object.
 
-### Channel
+### Signal metadata
 
-A **Channel** is a semantic signal stream associated with an entity or source.
+Semantic information about a signal should initially be represented as metadata rather than as a fixed `Channel` abstraction.
 
-Examples:
-
-- temperature;
-- presence;
-- position;
-- connectivity;
-- state;
-- velocity;
-- load;
-- availability.
-
-Channels should define meaning and expected shape without embedding assumptions about where their values originate.
+Examples may include units, device classes, source information, human-readable names, ranges, quality descriptors, or integration-specific classifications. This keeps the core domain-independent and allows later experiments to determine which concepts, if any, deserve promotion to first-class abstractions.
 
 ### Signal history and current state
 
@@ -244,7 +242,7 @@ This is analogous to learned token embeddings in language models, but sensor dat
 
 A model may therefore encode a signal using some combination of:
 
-- channel or signal type;
+- signal identity and metadata;
 - source;
 - associated entity;
 - value or event payload;
@@ -298,7 +296,7 @@ flowchart LR
     Z --> M
 ```
 
-Such a representation may capture correlations between channels, entities, rates of change, recurring situations, or other latent structure without requiring those concepts to be predefined as explicit fields.
+Such a representation may capture correlations between signals, entities, rates of change, recurring situations, or other latent structure without requiring those concepts to be predefined as explicit fields.
 
 The architecture must not assign fixed human meanings to individual latent dimensions. A vector whose dimensions are manually defined as temperature, humidity, presence, and so on is a useful feature vector, but it is not the same thing as a learned latent representation. Learned representations should remain free to organize information according to what is useful for the training objective.
 
@@ -338,13 +336,13 @@ Useful training objectives may include, for example:
 
 - predicting future signals from a preceding time window;
 - reconstructing masked or missing signals;
-- predicting one channel from correlated channels;
+- predicting one signal from correlated signals;
 - distinguishing similar and dissimilar situations;
 - learning representations that are useful for downstream perception, prediction, or control tasks.
 
 These are examples rather than prescribed objectives. The important architectural property is that training can sample historical experience independently of how signals are stored.
 
-When episode-based training support is introduced, an episode should describe the experience to be sampled rather than replace the underlying signal history. An episode may identify a model instance, a time interval, relevant channels or signals, and model-specific metadata. A trainer can then select episodes and resolve their actual inputs from the canonical signal history.
+When episode-based training support is introduced, an episode should describe the experience to be sampled rather than replace the underlying signal history. An episode may identify a model instance, a time interval, relevant signals, and model-specific metadata. A trainer can then select episodes and resolve their actual inputs from the canonical signal history.
 
 ```mermaid
 flowchart LR
@@ -417,7 +415,7 @@ Policies may consider:
 - signal confidence;
 - disagreement between sources;
 - current context;
-- combinations of channels;
+- combinations of signals;
 - expected versus actual state.
 
 This allows most uninteresting changes to be processed without invoking higher-cost reasoning.
@@ -738,7 +736,7 @@ This is not a prescribed package structure. Creating empty modules merely to mir
 
 The initial milestones should concentrate on the parts that establish the semantic foundation:
 
-1. entities, channels, and signals;
+1. signals, samples, and signal metadata;
 2. current and historical signal state;
 3. signal policies;
 4. observation generation;
@@ -753,7 +751,7 @@ This sequence deliberately avoids starting with an LLM abstraction. Doing so wou
 
 Several concepts remain intentionally unresolved:
 
-- What is the exact ownership relationship between sources, entities, and channels?
+- What is the exact ownership relationship between sources, entities, and signals?
 - Should observations be immutable event records?
 - Which internal-state representations prove useful enough to become core abstractions?
 - Which parts of internal context should be durable across restarts?
