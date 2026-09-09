@@ -31,7 +31,7 @@ val temperature = Signal<Double>(
 
 Signal ids must be globally stable within the runtime. Metadata may evolve, but changing the id means referring to a different signal.
 
-For convenience, `Signal` also accepts a string constructor, but APIs that exchange identity without the full signal definition should use `SignalId`.
+`Signal` requires an explicit `SignalId`. Keeping that conversion explicit avoids confusing arbitrary strings with stable signal identity and also avoids JVM signature collisions caused by `SignalId` being an inline value class.
 
 ## Metadata
 
