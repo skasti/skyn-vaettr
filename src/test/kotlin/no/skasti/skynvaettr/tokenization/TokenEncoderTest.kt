@@ -47,6 +47,23 @@ class TokenEncoderTest {
     }
 
     @Test
+    fun `feature signs are not determined by bucket parity`() {
+        val vectors = ("a".."z").map { encoder.encode(Token(it)) }
+
+        val evenValues = vectors.flatMap { vector ->
+            vector.withIndex().filter { it.index % 2 == 0 }.map { it.value }
+        }
+        val oddValues = vectors.flatMap { vector ->
+            vector.withIndex().filter { it.index % 2 != 0 }.map { it.value }
+        }
+
+        assertTrue(evenValues.any { it < 0.0 })
+        assertTrue(evenValues.any { it > 0.0 })
+        assertTrue(oddValues.any { it < 0.0 })
+        assertTrue(oddValues.any { it > 0.0 })
+    }
+
+    @Test
     fun `non empty token vectors are unit normalized`() {
         val vector = encoder.encode(Token("temperature"))
         val norm = sqrt(vector.sumOf { it * it })
