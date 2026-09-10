@@ -48,7 +48,9 @@ class DeterministicByteTokenEncoder(
             var hash = key.hashCode() xor ((salt + projection * 31) * GOLDEN_RATIO_HASH)
             hash = hash xor (hash ushr 16)
             val index = Math.floorMod(hash, target.size)
-            target[index] += if ((hash and 1) == 0) 1.0 else -1.0
+            // Use the high sign bit rather than a low bit also consumed by bucket selection.
+            // This keeps signed feature hashing from tying a coordinate's sign to its index parity.
+            target[index] += if (hash < 0) -1.0 else 1.0
         }
     }
 
