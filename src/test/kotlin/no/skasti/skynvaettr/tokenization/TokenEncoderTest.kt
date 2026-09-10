@@ -57,6 +57,15 @@ class TokenEncoderTest {
     }
 
     @Test
+    fun `non empty token remains unit normalized after projection cancellation`() {
+        val vector = DeterministicByteTokenEncoder(dimensions = 1).encode(Token("abab"))
+        val norm = sqrt(vector.sumOf { it * it })
+
+        assertTrue(abs(norm - 1.0) < 1e-12)
+        assertTrue(vector.any { it != 0.0 })
+    }
+
+    @Test
     fun `non empty token vectors are unit normalized`() {
         val vector = encoder.encode(Token("temperature"))
         val norm = sqrt(vector.sumOf { it * it })
