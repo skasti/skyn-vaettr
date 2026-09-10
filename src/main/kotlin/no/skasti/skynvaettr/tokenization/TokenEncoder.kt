@@ -13,7 +13,10 @@ interface TokenEncoder {
     val dimensions: Int
 
     /**
-     * Encodes [token] as a newly allocated vector of exactly [dimensions] components.
+     * Encodes [token] as a vector of exactly [dimensions] components.
+     *
+     * The returned values remain valid after this call and must not subsequently be mutated by the
+     * encoder. Implementations are free to choose their allocation and caching strategy.
      */
     fun encode(token: Token): DoubleArray
 }
