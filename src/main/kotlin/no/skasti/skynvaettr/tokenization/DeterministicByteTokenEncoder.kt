@@ -40,6 +40,15 @@ class DeterministicByteTokenEncoder(
             }
         }
 
+        if (bytes.isNotEmpty() && vector.all { it == 0.0 }) {
+            // Signed feature contributions can theoretically cancel exactly, especially with very
+            // small dimensions. Preserve a deterministic non-zero representation for non-empty
+            // tokens rather than returning a zero vector that cannot be unit-normalized.
+            var hash = token.value.hashCode()
+            hash = hash xor (hash ushr 16)
+            vector[Math.floorMod(hash, vector.size)] = if (hash < 0) -1.0 else 1.0
+        }
+
         return normalize(vector)
     }
 
