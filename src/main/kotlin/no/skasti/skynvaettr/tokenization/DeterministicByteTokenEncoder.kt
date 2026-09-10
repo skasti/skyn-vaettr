@@ -10,6 +10,11 @@ import kotlin.math.sqrt
  * It does not require a vocabulary lookup, so previously unseen tokens retain a deterministic
  * representation without growing model state or expanding bytes into outer sequence positions.
  *
+ * Token values are encoded exactly as supplied. This encoder does not perform Unicode
+ * normalization, case folding, or other canonicalization; those transformations belong upstream
+ * in tokenization when desired. Canonically equivalent strings with different UTF-8 byte sequences
+ * therefore intentionally produce different representations here.
+ *
  * This is deliberately a structural baseline rather than a learned semantic embedding.
  */
 class DeterministicByteTokenEncoder(
