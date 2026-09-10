@@ -48,7 +48,7 @@ class TokenEncoderTest {
 
     @Test
     fun `feature signs are not determined by bucket parity`() {
-        val vectors = ("a".."z").map { encoder.encode(Token(it)) }
+        val vectors = ('a'..'z').map { encoder.encode(Token(it.toString())) }
 
         val evenValues = vectors.flatMap { vector ->
             vector.withIndex().filter { it.index % 2 == 0 }.map { it.value }
