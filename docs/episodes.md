@@ -32,6 +32,60 @@ An episode definition currently contains only:
 
 Model identifiers, labels, rewards, selection scores, or other experiment-specific information should not be added until there is a demonstrated need for them.
 
+## Recording episodes from evaluation changes
+
+`EvaluationChangeEpisodeRecorder` provides a generic way to mark periods that become interesting because a model's evaluation changes materially.
+
+The recorder intentionally does **not** trigger merely because the model is wrong or because an error score is large. A model that remains consistently wrong may produce a constant high error for a long time; treating that entire interval as one interesting experience would create an unbounded episode without identifying when anything actually changed.
+
+Instead, the recorder compares consecutive scalar evaluations:
+
+```text
+prediction quality: wrong wrong wrong | right right | wrong wrong
+                                  change ^          ^ change
+```
+
+Both directions are interesting. A model going from wrong to right and a model going from right to wrong can indicate that something in the observed world changed relative to the model's expectation.
+
+The scalar evaluation is deliberately domain-agnostic. It may be:
+
+- binary correctness;
+- prediction error;
+- Brier score;
+- another model-specific quality or loss value.
+
+The caller chooses `minimumEvaluationChange` to define what counts as material. The recorder only reacts to the magnitude of the change; it does not assume that larger or smaller scores are better.
+
+Example:
+
+```kotlin
+val recorder = EvaluationChangeEpisodeRecorder(
+    signals = listOf(light, button, presence),
+    preRoll = Duration.ofSeconds(30),
+    postRoll = Duration.ofSeconds(30),
+    minimumEvaluationChange = 0.5,
+)
+
+recorder.observe(t0, evaluation = 1.0)
+recorder.observe(t1, evaluation = 0.0) // starts an episode at t1 - 30 s
+
+val completed = recorder.advanceTo(t1.plusSeconds(30))
+```
+
+With this configuration an isolated trigger yields roughly:
+
+```text
+<t1 - 30 s> -------- <t1> -------- <t1 + 30 s>
+   historical         change          aftermath
+     context
+```
+
+The pre-roll does not require the recorder to buffer or duplicate signal values. The resulting `EpisodeDefinition` simply points back into canonical history in `SampleStore`.
+
+If another material evaluation change occurs before the post-roll expires, the same episode is extended. This naturally groups clusters of related changes while allowing quiet periods to terminate the episode. `minimumEpisodeDuration` can additionally prevent very short episodes.
+
+This is intentionally a first, simple salience policy. Smoothing, learned salience, exponential decay, model-specific evaluation aggregation, or richer episode metadata can be layered around it later without changing `EpisodeDefinition` or `SampleStore`.
+
 ## EpisodeData
 
 `EpisodeData` is a compact materialized representation of an episode.
