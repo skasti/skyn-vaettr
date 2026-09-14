@@ -4,11 +4,8 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Duration
 import java.time.Instant
-import no.skasti.skynvaettr.Vaettr
-import no.skasti.skynvaettr.examples.ThermalExpectationScenario
+import no.skasti.skynvaettr.examples.ThermalExpectationLearning
 import no.skasti.skynvaettr.expectations.Expectation
-import no.skasti.skynvaettr.expectations.ExpectationResult
-import no.skasti.skynvaettr.signals.Sample
 
 /** Renders the inspectable report for the minimal thermal expectation example. */
 object ThermalExpectationReport {
@@ -17,20 +14,21 @@ object ThermalExpectationReport {
         val reportDir = Path.of(args.firstOrNull() ?: "build/reports/examples/thermal-expectation")
         Files.createDirectories(reportDir)
 
-        val vaettr = Vaettr()
-        val world = ThermalExpectationScenario()
-        val duration = Duration.ofDays(1)
+        val learning = ThermalExpectationLearning()
+        val world = learning.world
+        val duration = Duration.ofDays(3)
+        val reportStart = Instant.EPOCH.plus(Duration.ofDays(2))
         val reportEnd = Instant.EPOCH.plus(duration)
 
         world.simulate(
             duration = duration,
             step = Duration.ofMinutes(5),
         ) { samples ->
-            vaettr.sense(samples)
+            learning.vaettr.sense(samples)
         }
 
-        val samples = vaettr.sampleStore.get(
-            Instant.EPOCH,
+        val samples = learning.sampleStore.get(
+            reportStart,
             reportEnd.plusNanos(1),
         )
 
@@ -41,16 +39,20 @@ object ThermalExpectationReport {
         )
 
         renderer.render(
-            title = "Thermal expectation example — one simulated day",
+            title = "Thermal expectation example — final simulated day",
             yAxisTitle = "Temperature (°C)",
             samples = samples,
             series = worldSeries,
             output = reportDir.resolve("day.png"),
         )
 
-        val expectationSeries = illustrativeExpectations(samples, world, reportEnd)
+        val expectationSeries = expectationOverlays(
+            expectations = learning.trainer.expectations,
+            reportStart = reportStart,
+            reportEnd = reportEnd,
+        )
         renderer.render(
-            title = "Thermal expectation example — illustrative expectations",
+            title = "Thermal expectation example — learned expectations",
             yAxisTitle = "Temperature (°C)",
             samples = samples,
             series = worldSeries,
@@ -58,131 +60,59 @@ object ThermalExpectationReport {
             output = reportDir.resolve("expectations.png"),
         )
 
+        val resolved = learning.trainer.expectations.count { it.result != null }
+        val fulfilled = learning.trainer.expectations.count { it.result?.value == "Fulfilled" }
+        val violated = learning.trainer.expectations.count { it.result?.value == "Violated" }
+        val experiences = learning.trainer.experiences
+
         Files.writeString(
             reportDir.resolve("summary.md"),
             """
             ## Thermal expectation example
 
-            One simulated day using only `sensor.outdoor.temperature` and `sensor.indoor.temperature` as observations.
-            Outdoor temperature follows a 10–25 °C daily sine wave. Indoor temperature responds with thermal inertia,
-            retaining 90% of the remaining outdoor/indoor delta after one hour by default.
+            Three simulated days using only `sensor.outdoor.temperature` and `sensor.indoor.temperature` as observations.
+            The graphs show the final day after the default model has accumulated expectation-derived experience.
 
-            `day.png` shows only world observations. `expectations.png` adds three **illustrative** expectations for
-            `sensor.indoor.temperature` as separate series. They are not produced by a learned model; they exist to make
-            the expectation representation inspectable while the model/gate behavior is still experimental.
+            The model emits horizon-free predictions. `ExpectationTrainer` turns those into persistent expectations,
+            lets the lifecycle policy resolve them from later observations, then trains on the value observed at the
+            actual resolution point. No +1/+5/+10 minute target exists in this example.
 
-            Each expectation series begins at `formedAt` and remains visible while the expectation is active. A result
-            closes the series at `ExpectationResult.timestamp`; an expectation without a result remains visible through
-            the end of the report window. Completed series include the result value in the legend, for example
-            `Expectation 2 (Abandoned)`.
+            Resolved expectations: **$resolved** (`Fulfilled`: **$fulfilled**, `Violated`: **$violated**).
+            Replayable expectation episodes: **${experiences.size}**.
+            Model training examples currently retained: **${learning.model.trainingExampleCount}**.
 
-            The x-axis means **when the expectation was held**, not a fixed target timestamp or prediction horizon. Each
-            expectation keeps its original `signalInitialValue` and `expectationInitialValue` while its current `value`
-            may be refined.
+            `expectations.png` renders the expectation value for the interval where each belief was active. Completed
+            series include the result in parentheses. The x-axis therefore means **when the expectation was held**, not
+            a forecast target timestamp.
+
+            Replay selection is priority-weighted. The default numeric lifecycle currently assigns high priority to
+            surprising violations and low priority to fulfilled expectations. This is only a working baseline; both the
+            model and lifecycle/replay policies remain replaceable generic components.
             """.trimIndent() + "\n",
         )
     }
 
-    private fun illustrativeExpectations(
-        samples: List<Sample<*>>,
-        world: ThermalExpectationScenario,
+    private fun expectationOverlays(
+        expectations: List<Expectation<Double>>,
+        reportStart: Instant,
         reportEnd: Instant,
-    ): List<SampleChartRenderer.OverlaySeries> {
-        data class Refinement(
-            val afterFormation: Duration,
-            val offset: Double,
-        )
+    ): List<SampleChartRenderer.OverlaySeries> =
+        expectations
+            .filter { expectation ->
+                !expectation.formedAt.isAfter(reportEnd) &&
+                    (expectation.result == null || !expectation.result.timestamp.isBefore(reportStart))
+            }
+            .mapIndexed { index, expectation ->
+                val start = maxOf(expectation.formedAt, reportStart)
+                val end = minOf(expectation.result?.timestamp ?: reportEnd, reportEnd)
+                val resultSuffix = expectation.result?.let { " (${it.value})" }.orEmpty()
 
-        data class Example(
-            val formedAt: Duration,
-            val initialOffset: Double,
-            val refinements: List<Refinement>,
-            val result: Pair<Duration, String>? = null,
-        )
-
-        val examples = listOf(
-            Example(
-                formedAt = Duration.ofHours(4),
-                initialOffset = 1.6,
-                refinements = listOf(
-                    Refinement(Duration.ofMinutes(45), 1.9),
-                    Refinement(Duration.ofMinutes(90), 2.1),
-                ),
-                result = Duration.ofHours(3) to "Fulfilled",
-            ),
-            Example(
-                formedAt = Duration.ofHours(11),
-                initialOffset = 1.0,
-                refinements = listOf(
-                    Refinement(Duration.ofMinutes(50), 0.8),
-                    Refinement(Duration.ofMinutes(100), 0.5),
-                ),
-                result = Duration.ofHours(2) to "Abandoned",
-            ),
-            Example(
-                formedAt = Duration.ofHours(18),
-                initialOffset = -1.4,
-                refinements = listOf(
-                    Refinement(Duration.ofMinutes(40), -1.7),
-                    Refinement(Duration.ofMinutes(80), -1.9),
-                ),
-            ),
-        )
-
-        return examples.mapIndexed { index, example ->
-            val formedAt = Instant.EPOCH.plus(example.formedAt)
-            val signalInitialValue = numericValueAt(samples, world.indoorTemperature.id.value, formedAt)
-            val initialExpectedValue = signalInitialValue + example.initialOffset
-            val result = example.result?.let { (afterFormation, value) ->
-                ExpectationResult(
-                    value = value,
-                    timestamp = formedAt.plus(afterFormation),
+                SampleChartRenderer.OverlaySeries(
+                    label = "Expectation ${index + 1}$resultSuffix",
+                    points = listOf(
+                        SampleChartRenderer.Point(start, expectation.value),
+                        SampleChartRenderer.Point(end, expectation.value),
+                    ),
                 )
             }
-            val initial = Expectation(
-                signal = world.indoorTemperature,
-                signalInitialValue = signalInitialValue,
-                value = initialExpectedValue,
-                formedAt = formedAt,
-                confidence = 0.65 + index * 0.1,
-                result = result,
-            )
-
-            val expectationResult = initial.result
-            var currentValue = initial.value
-            val points = buildList {
-                add(SampleChartRenderer.Point(initial.formedAt, currentValue))
-
-                example.refinements.forEach { refinement ->
-                    val timestamp = initial.formedAt.plus(refinement.afterFormation)
-                    if (expectationResult == null || !timestamp.isAfter(expectationResult.timestamp)) {
-                        currentValue = signalInitialValue + refinement.offset
-                        add(SampleChartRenderer.Point(timestamp, currentValue))
-                    }
-                }
-
-                val activeUntil = expectationResult?.timestamp ?: reportEnd
-                if (last().timestamp != activeUntil) {
-                    add(SampleChartRenderer.Point(activeUntil, currentValue))
-                }
-            }
-
-            val resultSuffix = expectationResult?.let { " (${it.value})" }.orEmpty()
-            SampleChartRenderer.OverlaySeries(
-                label = "Expectation ${index + 1}$resultSuffix",
-                points = points,
-            )
-        }
-    }
-
-    private fun numericValueAt(
-        samples: List<Sample<*>>,
-        signalId: String,
-        timestamp: Instant,
-    ): Double = samples
-        .asSequence()
-        .filter { it.signal.id.value == signalId && it.timestamp == timestamp }
-        .mapNotNull { (it.value as? Number)?.toDouble() }
-        .firstOrNull()
-        ?: error("No numeric sample for $signalId at $timestamp")
 }
