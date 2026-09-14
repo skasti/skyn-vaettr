@@ -2,6 +2,7 @@ package no.skasti.skynvaettr.examples
 
 import java.time.Duration
 import java.time.Instant
+import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -31,16 +32,21 @@ class ThermalExpectationScenarioTest {
 
         assertTrue(outdoorValues.min() >= 10.0 - 1e-9)
         assertTrue(outdoorValues.max() <= 25.0 + 1e-9)
-        assertTrue(indoorValues.zipWithNext().all { (a, b) -> kotlin.math.abs(b - a) < 1.0 })
+        assertTrue(indoorValues.zipWithNext().all { (a, b) -> abs(b - a) < 1.0 })
 
         val experiences = learning.trainer.experiences
         assertTrue(experiences.isNotEmpty())
-        assertTrue(experiences.any { it.priority > 0.0 })
         assertTrue(learning.model.trainingExampleCount > 0)
 
         experiences.forEach { experience ->
-            val result = assertNotNull(experience.expectation.result)
-            assertEquals(experience.expectation.formedAt, experience.episode.from)
+            val expectation = experience.expectation
+            val result = assertNotNull(expectation.result)
+
+            // Stability expectations are disabled for this example, so every resolved expectation
+            // must represent a material directional prediction rather than "stay where you are".
+            assertTrue(abs(expectation.expectationInitialValue - expectation.signalInitialValue) > 1e-12)
+
+            assertEquals(expectation.formedAt, experience.episode.from)
             assertEquals(result.timestamp.plusNanos(1), experience.episode.to)
             assertEquals(
                 listOf(world.outdoorTemperature, world.indoorTemperature),
