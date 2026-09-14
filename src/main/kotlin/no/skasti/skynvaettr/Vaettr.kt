@@ -23,6 +23,8 @@ class Vaettr(
 ) {
     private val graph: ProcessingGraph = graph ?: SensingProcessingGraph(sampleStore)
 
+    constructor(graph: ProcessingGraph) : this(InMemorySampleStore(), graph, emptyList())
+
     fun sense(samples: List<Sample<*>>) {
         if (samples.isEmpty()) return
 
