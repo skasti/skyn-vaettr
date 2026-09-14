@@ -33,6 +33,8 @@ interface SampleStore {
     fun latestAtOrBefore(
         signal: SignalId,
         at: Instant,
-    ): Sample<*>? =
-        get(Instant.MIN, at.plusNanos(1), signal).lastOrNull()
+    ): Sample<*>? {
+        val before = if (at == Instant.MAX) Instant.MAX else at.plusNanos(1)
+        return get(Instant.MIN, before, signal).lastOrNull()
+    }
 }
