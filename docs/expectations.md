@@ -20,7 +20,7 @@ flowchart LR
 
 This keeps learned model components independent of concrete signal semantics. A model may later feed several decoders or other downstream model components without changing its core contract.
 
-`PredictionDecoder<T>` interprets compatible model output as a prediction for one `Signal<T>`. The current training loop also asks the decoder to map an observed target value back into the model's output representation space. This keeps inference and training on the same latent boundary while leaving signal/domain meaning outside the model itself.
+`PredictionDecoder<T>` interprets compatible model output as a prediction for one `Signal<T>`. The training loop also asks the decoder to map an observed target value back into the model's output representation space. This keeps inference and training on the same latent boundary while leaving signal/domain meaning outside the model itself.
 
 ## Prediction
 
@@ -30,6 +30,30 @@ Confidence is normalized to `0.0..1.0`. It describes support for the prediction;
 
 Predictions deliberately have no mandatory target timestamp or fixed forecast horizon. Timing and other temporal semantics belong to the learned/runtime process around a prediction rather than to the value type itself.
 
+## Dynamic prediction target discovery
+
+Prediction targets are not configured on the trainer or in scenario-specific wiring.
+
+`PredictionRouteFactory` is the current discovery boundary. When the sensing graph observes a signal for the first time, compatible factories may create a graph-owned `PredictionRoute` consisting of a model and decoder for that target signal.
+
+The current default experiment uses `DoublePredictionRouteFactory`. It creates one independent numeric predictor route for each observed `Double` signal.
+
+```mermaid
+flowchart LR
+    S[Observed signals] --> F[PredictionRouteFactory]
+    F --> A[Model + decoder for signal A]
+    F --> B[Model + decoder for signal B]
+    F --> C[Model + decoder for signal C]
+
+    R[Complete sensory Representation] --> A
+    R --> B
+    R --> C
+```
+
+Each target has separate model state/output semantics, so training different signals does not mix incompatible scalar targets. At the same time every predictor consumes the same complete sensory representation, allowing a predictor for one signal to learn relationships involving any other represented signal.
+
+This is intentionally narrower than general dynamic model construction. The current mechanism discovers prediction heads/routes for compatible observed signals; it does not yet discover arbitrary model topologies or decide when several targets should share a learned backbone.
+
 ## Expectation policy
 
 A decoded prediction may be considered by an `ExpectationPolicy<T>`. The policy owns decisions such as:
@@ -37,12 +61,13 @@ A decoded prediction may be considered by an `ExpectationPolicy<T>`. The policy 
 - whether it supports the decoded prediction type;
 - how much confidence is needed before committing;
 - whether a prediction should create an expectation at all;
-- whether recent observed movement is enough to open a low-confidence exploratory expectation while a model is still untrained;
 - whether later evidence fulfills or violates an expectation;
 - whether later compatible predictions should refine an existing expectation;
 - what replay priority or surprise should be associated with the result.
 
 These rules are deliberately not encoded in `Prediction` or `Expectation`.
+
+`NumericExpectationPolicy` maintains observed range state per signal rather than globally, so unrelated numeric scales do not affect one another's thresholds.
 
 ## Expectation
 
@@ -96,18 +121,15 @@ When an expectation resolves, the observed value at the actual resolution point 
 
 The elapsed time may differ between experiences; no `+1 minute`, `+5 minute`, or other fixed target horizon is implied.
 
-Episode signal membership is derived from the canonical `SampleStore` history spanning the resolved expectation lifecycle rather than being configured on the trainer.
+Episode signal membership is derived from canonical `SampleStore` history spanning the resolved expectation lifecycle rather than being configured on the trainer.
 
-## Replay
+## Bootstrap and replay
 
-`ExpectationExperience<T>` retains:
+An untrained model may have too little confidence to form a normal expectation. `NumericExpectationPolicy` can therefore open a low-confidence exploratory directional expectation from observed local movement. This provides a horizon-free bootstrap path without turning the next sample into an implicit fixed training target.
 
-- the resolved expectation;
-- its `EpisodeDefinition`;
-- the trainable model and decoder that produced it;
-- the exact inference input `Representation`;
-- the observed resolution value;
-- generic replay priority.
+When such an expectation resolves, the resulting experience trains the graph-owned predictor in exactly the same way as later model-driven expectations.
+
+`ExpectationExperience<T>` retains the resolved expectation, its `EpisodeDefinition`, the trainable model and decoder that produced it, the exact inference input `Representation`, the observed resolution value and generic replay priority.
 
 `WeightedPriorityReplaySelector` is the current generic replay baseline. It samples old experiences according to caller-provided priority with a small floor so low-priority experience remains reachable.
 
@@ -117,11 +139,7 @@ Episode signal membership is derived from the canonical `SampleStore` history sp
 
 `NumericPredictionDecoder` assigns that latent output to a concrete numeric signal.
 
-`NumericExpectationPolicy` is a small horizon-free lifecycle policy for continuous numeric predictions. Stability expectations can be enabled or disabled. The current thermal example disables them.
-
-To avoid a cold-start deadlock when a model has too little experience to produce a sufficiently confident prediction, the numeric policy can use the immediately preceding observation as weak exploratory evidence. If the signal has moved materially, it opens a low-confidence directional expectation in that same direction. The target distance is scale-normalized and at least as large as the policy's normal material-prediction threshold. Once such an exploratory expectation resolves, the resulting experience trains the same graph-owned model that produced the low-confidence prediction.
-
-This bootstrap path is still expectation-driven: it does not train on every next sample, does not introduce a fixed forecast horizon, and does not require scenario-specific feature wiring. It should nevertheless be treated as an exploration baseline rather than a final general solution for every signal type.
+The thermal example configures only the generic `DoublePredictionRouteFactory`; neither indoor nor outdoor temperature is declared as a target. Both are discovered from observations and receive independent predictors.
 
 ## Current boundary
 
@@ -131,7 +149,7 @@ The promoted flow is now:
 flowchart LR
     S[Samples]
     --> R1[Graph Representation]
-    --> M[Model]
+    --> M[Discovered target model]
     --> R2[Latent Representation]
     --> D[Decoder]
     --> P[Prediction]
@@ -142,4 +160,4 @@ flowchart LR
     --> M
 ```
 
-This revision intentionally establishes only the model/representation/decoder boundary and the minimum graph discovery needed by the expectation-learning experiment. General graph ports, scheduling, dynamic model creation, decoder discovery for previously unseen signal types, richer expectation refinement, and broader bootstrap/exploration strategies remain experiment-driven follow-up work.
+This revision establishes the model/representation/decoder boundary, graph-owned training, numeric bootstrap and dynamic discovery of compatible numeric prediction targets. General graph ports, scheduling, richer model-family discovery, shared-backbone/multi-head learning, non-Double decoder factories and richer expectation refinement remain experiment-driven follow-up work.
