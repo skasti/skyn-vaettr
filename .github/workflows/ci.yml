@@ -51,7 +51,7 @@ jobs:
           name: example-reports
           path: build/reports/examples
 
-      - name: Publish thermal example graph and summary
+      - name: Publish thermal example graphs and summary
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -62,11 +62,11 @@ jobs:
           set -euo pipefail
 
           report_dir="build/reports/examples/thermal-expectation"
-          graph="$report_dir/day.png"
           summary="$report_dir/summary.md"
 
-          test -f "$graph"
           test -f "$summary"
+          test -f "$report_dir/day.png"
+          test -f "$report_dir/expectations.png"
 
           if ! gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$RESULTS_BRANCH" >/dev/null 2>&1; then
             gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
@@ -74,48 +74,65 @@ jobs:
               -f sha="$BASE_SHA" >/dev/null
           fi
 
-          target="pr-$PR_NUMBER/examples/thermal-expectation/day.png"
-          encoded_file=$(mktemp)
-          payload_file=$(mktemp)
-          base64 -w0 "$graph" > "$encoded_file"
+          publish_graph() {
+            graph="$1"
+            target="$2"
+            description="$3"
+            encoded_file=$(mktemp)
+            payload_file=$(mktemp)
+            base64 -w0 "$graph" > "$encoded_file"
 
-          published=false
-          for attempt in 1 2 3; do
-            existing_sha=$(gh api "repos/$GITHUB_REPOSITORY/contents/$target?ref=$RESULTS_BRANCH" --jq '.sha' 2>/dev/null || true)
+            published=false
+            for attempt in 1 2 3; do
+              existing_sha=$(gh api "repos/$GITHUB_REPOSITORY/contents/$target?ref=$RESULTS_BRANCH" --jq '.sha' 2>/dev/null || true)
 
-            if [ -n "$existing_sha" ]; then
-              jq -n \
-                --rawfile content "$encoded_file" \
-                --arg message "ci: update PR $PR_NUMBER thermal example graph" \
-                --arg branch "$RESULTS_BRANCH" \
-                --arg sha "$existing_sha" \
-                '{message: $message, content: $content, branch: $branch, sha: $sha}' \
-                > "$payload_file"
-            else
-              jq -n \
-                --rawfile content "$encoded_file" \
-                --arg message "ci: publish PR $PR_NUMBER thermal example graph" \
-                --arg branch "$RESULTS_BRANCH" \
-                '{message: $message, content: $content, branch: $branch}' \
-                > "$payload_file"
+              if [ -n "$existing_sha" ]; then
+                jq -n \
+                  --rawfile content "$encoded_file" \
+                  --arg message "ci: update PR $PR_NUMBER $description" \
+                  --arg branch "$RESULTS_BRANCH" \
+                  --arg sha "$existing_sha" \
+                  '{message: $message, content: $content, branch: $branch, sha: $sha}' \
+                  > "$payload_file"
+              else
+                jq -n \
+                  --rawfile content "$encoded_file" \
+                  --arg message "ci: publish PR $PR_NUMBER $description" \
+                  --arg branch "$RESULTS_BRANCH" \
+                  '{message: $message, content: $content, branch: $branch}' \
+                  > "$payload_file"
+              fi
+
+              if gh api --method PUT "repos/$GITHUB_REPOSITORY/contents/$target" --input "$payload_file" >/dev/null 2>&1; then
+                published=true
+                break
+              fi
+
+              echo "Graph publish raced with another update; retrying ($attempt/3)"
+              sleep "$attempt"
+            done
+
+            rm -f "$encoded_file" "$payload_file"
+            if [ "$published" != true ]; then
+              echo "Failed to publish $target after 3 attempts" >&2
+              exit 1
             fi
+          }
 
-            if gh api --method PUT "repos/$GITHUB_REPOSITORY/contents/$target" --input "$payload_file" >/dev/null 2>&1; then
-              published=true
-              break
-            fi
+          publish_graph \
+            "$report_dir/day.png" \
+            "pr-$PR_NUMBER/examples/thermal-expectation/day.png" \
+            "thermal example graph"
 
-            echo "Graph publish raced with another update; retrying ($attempt/3)"
-            sleep "$attempt"
-          done
-
-          rm -f "$encoded_file" "$payload_file"
-          if [ "$published" != true ]; then
-            echo "Failed to publish $target after 3 attempts" >&2
-            exit 1
-          fi
+          publish_graph \
+            "$report_dir/expectations.png" \
+            "pr-$PR_NUMBER/examples/thermal-expectation/expectations.png" \
+            "thermal expectation graph"
 
           cat "$summary" >> "$GITHUB_STEP_SUMMARY"
           printf '\n![Thermal expectation example](https://raw.githubusercontent.com/%s/%s/pr-%s/examples/thermal-expectation/day.png?run=%s)\n' \
+            "$GITHUB_REPOSITORY" "$RESULTS_BRANCH" "$PR_NUMBER" "$GITHUB_RUN_ID" \
+            >> "$GITHUB_STEP_SUMMARY"
+          printf '\n![Illustrative expectation series](https://raw.githubusercontent.com/%s/%s/pr-%s/examples/thermal-expectation/expectations.png?run=%s)\n' \
             "$GITHUB_REPOSITORY" "$RESULTS_BRANCH" "$PR_NUMBER" "$GITHUB_RUN_ID" \
             >> "$GITHUB_STEP_SUMMARY"
