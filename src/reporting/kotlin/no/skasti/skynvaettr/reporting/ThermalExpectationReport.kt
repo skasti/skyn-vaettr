@@ -81,9 +81,10 @@ object ThermalExpectationReport {
             Replayable expectation episodes: **${experiences.size}**.
             Model training examples currently retained: **${learning.model.trainingExampleCount}**.
 
-            `expectations.png` renders the expectation value for the interval where each belief was active. Completed
-            series include the result in parentheses. The x-axis therefore means **when the expectation was held**, not
-            a forecast target timestamp.
+            `expectations.png` renders each expectation from the signal value observed when the belief was formed
+            (`signalInitialValue`) to the expectation's current `value` at its result time, or at the end of the graph
+            window while it remains active. Completed series include the result in parentheses. The x-axis therefore
+            means **when the expectation was held**, not a forecast target timestamp.
 
             Replay selection is priority-weighted. The default numeric lifecycle currently assigns high priority to
             surprising violations and low priority to fulfilled expectations. This is only a working baseline; both the
@@ -104,15 +105,14 @@ object ThermalExpectationReport {
                     (result == null || !result.timestamp.isBefore(reportStart))
             }
             .mapIndexed { index, expectation ->
-                val result = expectation.result
                 val start = maxOf(expectation.formedAt, reportStart)
-                val end = minOf(result?.timestamp ?: reportEnd, reportEnd)
-                val resultSuffix = result?.let { " (${it.value})" }.orEmpty()
+                val end = minOf(expectation.result?.timestamp ?: reportEnd, reportEnd)
+                val resultSuffix = expectation.result?.let { " (${it.value})" }.orEmpty()
 
                 SampleChartRenderer.OverlaySeries(
                     label = "Expectation ${index + 1}$resultSuffix",
                     points = listOf(
-                        SampleChartRenderer.Point(start, expectation.value),
+                        SampleChartRenderer.Point(start, expectation.signalInitialValue),
                         SampleChartRenderer.Point(end, expectation.value),
                     ),
                 )
