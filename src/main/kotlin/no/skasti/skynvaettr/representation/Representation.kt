@@ -12,14 +12,17 @@ class Representation private constructor(
 ) : Iterable<Embedding> {
     private val embeddings: List<Embedding> = embeddings.toList()
 
+    init {
+        require(this.embeddings.isNotEmpty()) { "representation must contain at least one position" }
+    }
+
     val positions: Int
         get() = embeddings.size
 
-    val dimensions: Int = embeddings.first().dimensions
+    val dimensions: Int = this.embeddings.first().dimensions
 
     init {
-        require(embeddings.isNotEmpty()) { "representation must contain at least one position" }
-        require(embeddings.all { it.dimensions == dimensions }) {
+        require(this.embeddings.all { it.dimensions == dimensions }) {
             "all embeddings in a representation must have the same dimensions"
         }
     }
