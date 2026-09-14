@@ -99,13 +99,15 @@ object ThermalExpectationReport {
     ): List<SampleChartRenderer.OverlaySeries> =
         expectations
             .filter { expectation ->
+                val result = expectation.result
                 !expectation.formedAt.isAfter(reportEnd) &&
-                    (expectation.result == null || !expectation.result.timestamp.isBefore(reportStart))
+                    (result == null || !result.timestamp.isBefore(reportStart))
             }
             .mapIndexed { index, expectation ->
+                val result = expectation.result
                 val start = maxOf(expectation.formedAt, reportStart)
-                val end = minOf(expectation.result?.timestamp ?: reportEnd, reportEnd)
-                val resultSuffix = expectation.result?.let { " (${it.value})" }.orEmpty()
+                val end = minOf(result?.timestamp ?: reportEnd, reportEnd)
+                val resultSuffix = result?.let { " (${it.value})" }.orEmpty()
 
                 SampleChartRenderer.OverlaySeries(
                     label = "Expectation ${index + 1}$resultSuffix",
