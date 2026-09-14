@@ -6,6 +6,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNotSame
+import kotlin.test.assertSame
 import no.skasti.skynvaettr.models.DoublePredictionRouteFactory
 import no.skasti.skynvaettr.models.OnlineKnnModel
 import no.skasti.skynvaettr.representation.SignalIdentityEmbedder
@@ -105,10 +106,12 @@ class SensingProcessingGraphTest {
         assertEquals(2, models.size)
         assertEquals(true, models.all { it is OnlineKnnModel })
         assertNotSame(models[0], models[1])
+
+        val executions = graph.predictionExecutions()
         assertEquals(
             setOf(firstSignal, secondSignal),
-            graph.predictionExecutions().map { it.prediction.signal }.toSet(),
+            executions.map { it.prediction.signal }.toSet(),
         )
-        assertEquals(2, graph.predictionExecutions().map { it.input }.distinctBy { it.toList() }.size.coerceAtMost(1) + 1)
+        assertSame(executions[0].input, executions[1].input)
     }
 }
