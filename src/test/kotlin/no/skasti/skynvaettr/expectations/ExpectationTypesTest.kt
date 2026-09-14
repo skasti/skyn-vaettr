@@ -24,7 +24,7 @@ class ExpectationTypesTest {
     }
 
     @Test
-    fun `expectation represents a persistent belief independently of a prediction snapshot`() {
+    fun `expectation represents persistent belief state`() {
         val expectation = Expectation(
             signal = signal,
             value = 21.2,
