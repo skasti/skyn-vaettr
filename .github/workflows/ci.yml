@@ -45,6 +45,7 @@ jobs:
       actions: read
       contents: write
       issues: write
+      pull-requests: write
     steps:
       - name: Download example reports
         uses: actions/download-artifact@v7
