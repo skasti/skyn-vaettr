@@ -29,7 +29,9 @@ class ThermalExpectationLearning(
         sampleStore = sampleStore,
         targetSignal = world.indoorTemperature,
         model = model,
-        policy = NumericExpectationPolicy(),
+        policy = NumericExpectationPolicy(
+            createStabilityExpectations = false,
+        ),
         episodeSignals = listOf(world.outdoorTemperature, world.indoorTemperature),
         inputAt = ::inputAt,
         replaySelector = WeightedPriorityReplaySelector<ExpectationExperience<DoubleArray, Double>>(
