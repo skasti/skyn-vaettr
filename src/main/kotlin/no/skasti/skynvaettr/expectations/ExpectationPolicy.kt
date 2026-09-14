@@ -16,13 +16,16 @@ data class ExpectationAssessment<T>(
 }
 
 /**
- * Policy boundary between short-lived model predictions and persistent expectations.
+ * Policy boundary between decoded predictions and persistent expectations.
  *
- * Implementations decide both what is worth committing to and when an active expectation has
- * accumulated enough evidence to resolve. [open] may return null when the prediction is not worth
- * committing to. The contract deliberately has no fixed forecast horizon.
+ * Implementations declare which decoded prediction values they understand, decide what is worth
+ * committing to, and decide when an active expectation has accumulated enough evidence to resolve.
+ * [open] may return null when the prediction is not worth committing to. The contract deliberately
+ * has no fixed forecast horizon.
  */
 interface ExpectationPolicy<T> {
+    fun supports(prediction: Prediction<*>): Boolean
+
     fun open(
         prediction: Prediction<T>,
         current: Sample<T>,
