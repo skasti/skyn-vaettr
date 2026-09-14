@@ -5,12 +5,11 @@ import java.time.Instant
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class ThermalExpectationScenarioTest {
     @Test
-    fun `vaettr turns thermal expectations into replayable learning experience`() {
+    fun `thermal learner does not bootstrap without stability expectations`() {
         val learning = ThermalExpectationLearning()
         val world = learning.world
 
@@ -34,24 +33,12 @@ class ThermalExpectationScenarioTest {
         assertTrue(outdoorValues.max() <= 25.0 + 1e-9)
         assertTrue(indoorValues.zipWithNext().all { (a, b) -> abs(b - a) < 1.0 })
 
-        val experiences = learning.trainer.experiences
-        assertTrue(experiences.isNotEmpty())
-        assertTrue(learning.model.trainingExampleCount > 0)
-
-        experiences.forEach { experience ->
-            val expectation = experience.expectation
-            val result = assertNotNull(expectation.result)
-
-            // Stability expectations are disabled for this example, so every resolved expectation
-            // must represent a material directional prediction rather than "stay where you are".
-            assertTrue(abs(expectation.expectationInitialValue - expectation.signalInitialValue) > 1e-12)
-
-            assertEquals(expectation.formedAt, experience.episode.from)
-            assertEquals(result.timestamp.plusNanos(1), experience.episode.to)
-            assertEquals(
-                listOf(world.outdoorTemperature, world.indoorTemperature),
-                experience.episode.signals,
-            )
-        }
+        // With stability expectations disabled the unseeded KNN starts at confidence 0.0.
+        // Those predictions are deliberately rejected, so no expectation can resolve into a
+        // training experience and the learner cannot bootstrap itself from this loop alone.
+        assertTrue(learning.trainer.expectations.isEmpty())
+        assertTrue(learning.trainer.experiences.isEmpty())
+        assertEquals(0, learning.model.trainingExampleCount)
+        assertEquals(null, learning.trainer.active)
     }
 }
