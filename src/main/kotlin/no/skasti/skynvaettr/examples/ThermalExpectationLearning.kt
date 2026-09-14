@@ -2,8 +2,7 @@ package no.skasti.skynvaettr.examples
 
 import no.skasti.skynvaettr.Vaettr
 import no.skasti.skynvaettr.expectations.NumericExpectationPolicy
-import no.skasti.skynvaettr.models.NumericPredictionDecoder
-import no.skasti.skynvaettr.models.OnlineKnnModel
+import no.skasti.skynvaettr.models.DoublePredictionRouteFactory
 import no.skasti.skynvaettr.runtime.SensingProcessingGraph
 import no.skasti.skynvaettr.signals.InMemorySampleStore
 import no.skasti.skynvaettr.training.ExpectationExperience
@@ -14,20 +13,16 @@ import no.skasti.skynvaettr.training.WeightedPriorityReplaySelector
  * Example wiring for [ThermalExpectationScenario].
  *
  * Samples enter the same generic sensing graph used by the runtime. The graph builds a
- * [no.skasti.skynvaettr.representation.Representation], runs compatible models, and decodes their
- * latent output into predictions. The trainer discovers those executions from the graph; it is not
- * wired to a target signal, model instance, feature vector, or explicit episode signal set.
+ * [no.skasti.skynvaettr.representation.Representation] and discovers prediction routes from the
+ * observed signal types. No thermal signal is configured as a prediction target.
  */
 class ThermalExpectationLearning(
     val world: ThermalExpectationScenario = ThermalExpectationScenario(),
 ) {
     val sampleStore = InMemorySampleStore()
-    val model = OnlineKnnModel()
-    val decoder = NumericPredictionDecoder(world.indoorTemperature)
     val graph = SensingProcessingGraph(
         sampleStore = sampleStore,
-        models = listOf(model),
-        predictionDecoders = listOf(decoder),
+        predictionRouteFactories = listOf(DoublePredictionRouteFactory()),
     )
     val trainer = ExpectationTrainer(
         sampleStore = sampleStore,
