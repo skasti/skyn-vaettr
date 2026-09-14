@@ -4,10 +4,27 @@ import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import no.skasti.skynvaettr.runtime.ProcessingGraph
+import no.skasti.skynvaettr.signals.InMemorySampleStore
 import no.skasti.skynvaettr.signals.Sample
 import no.skasti.skynvaettr.signals.Signal
+import no.skasti.skynvaettr.training.Trainer
 
 class VaettrTest {
+    @Test
+    fun `sense stores samples before notifying graph`() {
+        val store = InMemorySampleStore()
+        val sample = Sample(Signal<Double>("sensor.indoor.temperature"), 21.5, Instant.EPOCH)
+        var graphSawStoredSample = false
+        val graph = ProcessingGraph {
+            graphSawStoredSample = store.latestAtOrBefore(sample.signal.id, sample.timestamp) == sample
+        }
+        val vaettr = Vaettr(sampleStore = store, graph = graph)
+
+        vaettr.sense(sample)
+
+        assertEquals(true, graphSawStoredSample)
+    }
+
     @Test
     fun `sense forwards observed samples into configured graph`() {
         val received = mutableListOf<List<Sample<*>>>()
@@ -17,6 +34,25 @@ class VaettrTest {
         vaettr.sense(sample)
 
         assertEquals(listOf(listOf(sample)), received)
+    }
+
+    @Test
+    fun `trainers are notified after samples are stored`() {
+        val store = InMemorySampleStore()
+        val sample = Sample(Signal<Double>("sensor.indoor.temperature"), 21.5, Instant.EPOCH)
+        var trainerSawStoredSample = false
+        val trainer = Trainer {
+            trainerSawStoredSample = store.latestAtOrBefore(sample.signal.id, sample.timestamp) == sample
+        }
+        val vaettr = Vaettr(
+            sampleStore = store,
+            graph = ProcessingGraph { },
+            trainers = listOf(trainer),
+        )
+
+        vaettr.sense(sample)
+
+        assertEquals(true, trainerSawStoredSample)
     }
 
     @Test
