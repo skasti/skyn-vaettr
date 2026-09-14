@@ -6,122 +6,152 @@ import java.time.Instant
 import no.skasti.skynvaettr.episodes.EpisodeDefinition
 import no.skasti.skynvaettr.expectations.Expectation
 import no.skasti.skynvaettr.expectations.ExpectationPolicy
-import no.skasti.skynvaettr.models.TrainablePredictionModel
+import no.skasti.skynvaettr.expectations.Prediction
+import no.skasti.skynvaettr.models.PredictionDecoder
+import no.skasti.skynvaettr.models.TrainableModel
+import no.skasti.skynvaettr.runtime.PredictionExecution
+import no.skasti.skynvaettr.runtime.ProcessingGraph
 import no.skasti.skynvaettr.signals.Sample
 import no.skasti.skynvaettr.signals.SampleStore
-import no.skasti.skynvaettr.signals.Signal
 
 /**
  * Generic online trainer that turns resolved expectations into replayable episodes.
  *
- * The trainer does not impose a forecast horizon. It captures the model input when an expectation
- * is formed, lets [policy] decide when that belief has resolved, and trains the model toward the
- * value observed at that resolution. The policy may also decline to form an expectation for a
- * prediction. The resulting episode spans the expectation lifecycle (plus optional preceding
- * context) and can be selected for replay by any [ReplaySelector].
+ * Models are not configured on the trainer. The trainer discovers prediction-producing trainable
+ * model executions from the completed [ProcessingGraph], retains the exact latent [Representation]
+ * input used for inference, and trains the same model through the decoder's output-space target
+ * mapping when an expectation resolves.
  */
-class ExpectationTrainer<I, T>(
+class ExpectationTrainer<T>(
     private val sampleStore: SampleStore,
-    private val targetSignal: Signal<T>,
-    private val model: TrainablePredictionModel<I, T>,
     private val policy: ExpectationPolicy<T>,
-    episodeSignals: List<Signal<*>>,
-    private val inputAt: (SampleStore, Instant) -> I?,
-    private val replaySelector: ReplaySelector<ExpectationExperience<I, T>> = ReplaySelector { null },
+    private val replaySelector: ReplaySelector<ExpectationExperience<T>> = ReplaySelector { null },
     private val episodeContextBefore: Duration = Duration.ZERO,
 ) : Trainer {
-    private val episodeSignals = episodeSignals.toList()
-    private val resolvedExpectations = mutableListOf<Expectation<T>>()
-    private val resolvedExperiences = mutableListOf<ExpectationExperience<I, T>>()
+    private class Active<T>(
+        val model: TrainableModel,
+        val decoder: PredictionDecoder<T>,
+        val expectation: Expectation<T>,
+        val input: no.skasti.skynvaettr.representation.Representation,
+        var previousSample: Sample<T>,
+    )
 
-    private var activeExpectation: Expectation<T>? = null
-    private var activeInput: I? = null
-    private var previousSample: Sample<T>? = null
+    private val resolvedExpectations = mutableListOf<Expectation<T>>()
+    private val resolvedExperiences = mutableListOf<ExpectationExperience<T>>()
+    private val activeExpectations = mutableListOf<Active<T>>()
 
     init {
-        require(this.episodeSignals.isNotEmpty()) { "Expectation episodes require at least one signal" }
-        require(this.episodeSignals.distinct().size == this.episodeSignals.size) {
-            "Expectation episode signals must be unique"
-        }
-        require(targetSignal in this.episodeSignals) {
-            "Expectation episode signals must include the target signal"
-        }
         require(!episodeContextBefore.isNegative) { "Episode context cannot be negative" }
     }
 
     val expectations: List<Expectation<T>>
-        get() = resolvedExpectations.toList() + listOfNotNull(activeExpectation)
+        get() = resolvedExpectations.toList() + activeExpectations.map { it.expectation }
 
-    val experiences: List<ExpectationExperience<I, T>>
+    val experiences: List<ExpectationExperience<T>>
         get() = resolvedExperiences.toList()
 
-    val active: Expectation<T>?
-        get() = activeExpectation
+    val active: List<Expectation<T>>
+        get() = activeExpectations.map { it.expectation }
 
-    override fun onSenseCompleted(samples: List<Sample<*>>) {
-        targetSamples(samples).forEach(::observe)
+    override fun onSenseCompleted(
+        samples: List<Sample<*>>,
+        graph: ProcessingGraph,
+    ) {
+        resolveActive(samples)
+        openFrom(graph.predictionExecutions(), samples)
     }
 
-    private fun observe(current: Sample<T>) {
-        val input = inputAt(sampleStore, current.timestamp)
-        if (input == null) {
-            previousSample = current
-            return
-        }
+    private fun resolveActive(samples: List<Sample<*>>) {
+        activeExpectations.toList().forEach { active ->
+            val matchingSamples = samples
+                .filter { it.signal == active.expectation.signal }
+                .sortedBy { it.timestamp }
 
-        val expectation = activeExpectation
-        if (expectation != null) {
-            val assessment = policy.assess(expectation, previousSample, current)
-            if (assessment != null) {
-                val resolved = expectation.copy(result = assessment.result)
-                val formationInput = checkNotNull(activeInput) {
-                    "Active expectation must retain the input that formed it"
+            for (sample in matchingSamples) {
+                @Suppress("UNCHECKED_CAST")
+                val current = sample as Sample<T>
+                val assessment = policy.assess(active.expectation, active.previousSample, current)
+                if (assessment == null) {
+                    active.previousSample = current
+                    continue
                 }
+
+                val resolved = active.expectation.copy(result = assessment.result)
+                val from = subtractContext(resolved.formedAt)
+                val to = inclusiveEnd(assessment.result.timestamp)
+                val episodeSignals = sampleStore.get(from, to)
+                    .map { it.signal }
+                    .distinctBy { it.id }
                 val replayCandidates = resolvedExperiences.toList()
-                val experience: ExpectationExperience<I, T> = ExpectationExperience(
+                val experience = ExpectationExperience(
                     episode = EpisodeDefinition(
-                        from = subtractContext(resolved.formedAt),
-                        to = inclusiveEnd(assessment.result.timestamp),
+                        from = from,
+                        to = to,
                         signals = episodeSignals,
                     ),
                     expectation = resolved,
-                    input = formationInput,
+                    model = active.model,
+                    decoder = active.decoder,
+                    input = active.input,
                     observedValue = assessment.observedValue,
                     priority = assessment.priority,
                 )
 
                 resolvedExpectations.add(resolved)
                 resolvedExperiences.add(experience)
-
-                model.train(formationInput, assessment.observedValue)
+                active.model.train(
+                    active.input,
+                    active.decoder.trainingTarget(assessment.observedValue),
+                )
                 replaySelector.select(replayCandidates)?.let { replay ->
-                    model.train(replay.input, replay.observedValue)
+                    replay.model.train(
+                        replay.input,
+                        replay.decoder.trainingTarget(replay.observedValue),
+                    )
                 }
-
-                activeExpectation = null
-                activeInput = null
+                activeExpectations.remove(active)
+                break
             }
         }
-
-        if (activeExpectation == null) {
-            val prediction = model.predict(input)
-            require(prediction.signal == targetSignal) {
-                "Prediction model returned ${prediction.signal.id}, expected ${targetSignal.id}"
-            }
-            val opened = policy.open(prediction, current)
-            activeExpectation = opened
-            activeInput = if (opened != null) input else null
-        }
-
-        previousSample = current
     }
 
-    @Suppress("UNCHECKED_CAST")
-    private fun targetSamples(samples: List<Sample<*>>): List<Sample<T>> =
-        samples
-            .filter { it.signal == targetSignal }
-            .sortedBy { it.timestamp }
-            .map { it as Sample<T> }
+    private fun openFrom(
+        executions: List<PredictionExecution>,
+        samples: List<Sample<*>>,
+    ) {
+        executions.forEach { execution ->
+            val model = execution.model as? TrainableModel ?: return@forEach
+            if (!policy.supports(execution.prediction)) return@forEach
+
+            @Suppress("UNCHECKED_CAST")
+            val prediction = execution.prediction as Prediction<T>
+            @Suppress("UNCHECKED_CAST")
+            val decoder = execution.decoder as PredictionDecoder<T>
+
+            if (activeExpectations.any {
+                    it.model === model && it.expectation.signal == prediction.signal
+                }
+            ) {
+                return@forEach
+            }
+
+            val current = samples
+                .filter { it.signal == prediction.signal }
+                .maxByOrNull { it.timestamp }
+                ?: return@forEach
+            @Suppress("UNCHECKED_CAST")
+            val typedCurrent = current as Sample<T>
+
+            val expectation = policy.open(prediction, typedCurrent) ?: return@forEach
+            activeExpectations += Active(
+                model = model,
+                decoder = decoder,
+                expectation = expectation,
+                input = execution.input,
+                previousSample = typedCurrent,
+            )
+        }
+    }
 
     private fun subtractContext(formedAt: Instant): Instant =
         try {
