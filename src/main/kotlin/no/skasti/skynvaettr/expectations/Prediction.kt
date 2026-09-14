@@ -1,6 +1,5 @@
 package no.skasti.skynvaettr.expectations
 
-import java.time.Instant
 import no.skasti.skynvaettr.signals.Signal
 
 /**
@@ -11,13 +10,12 @@ import no.skasti.skynvaettr.signals.Signal
  * prediction is worth committing to, but the prediction itself does not encode that decision.
  *
  * Prediction deliberately has no mandatory target timestamp or fixed forecast horizon. Temporal
- * semantics belong to the model that produced it.
+ * semantics belong to the model or runtime around it rather than to this value type.
  */
 data class Prediction<T>(
     val signal: Signal<T>,
     val value: T,
     val confidence: Double,
-    val createdAt: Instant,
 ) {
     init {
         require(confidence.isFinite()) { "Prediction confidence must be finite" }
