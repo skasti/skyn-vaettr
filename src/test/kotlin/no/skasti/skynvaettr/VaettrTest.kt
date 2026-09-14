@@ -42,7 +42,8 @@ class VaettrTest {
         val sample = Sample(Signal<Double>("sensor.indoor.temperature"), 21.5, Instant.EPOCH)
         val graph = ProcessingGraph { order += "graph" }
         val trainer = Trainer { received ->
-            assertEquals(listOf(sample), received)
+            val expected: List<Sample<*>> = listOf(sample)
+            assertEquals(expected, received)
             order += "trainer"
         }
         val vaettr = Vaettr(
