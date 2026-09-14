@@ -148,25 +148,26 @@ object ThermalExpectationReport {
                 result = result,
             )
 
+            val expectationResult = initial.result
             var currentValue = initial.value
             val points = buildList {
                 add(SampleChartRenderer.Point(initial.formedAt, currentValue))
 
                 example.refinements.forEach { refinement ->
                     val timestamp = initial.formedAt.plus(refinement.afterFormation)
-                    if (initial.result == null || !timestamp.isAfter(initial.result.timestamp)) {
+                    if (expectationResult == null || !timestamp.isAfter(expectationResult.timestamp)) {
                         currentValue = signalInitialValue + refinement.offset
                         add(SampleChartRenderer.Point(timestamp, currentValue))
                     }
                 }
 
-                val activeUntil = initial.result?.timestamp ?: reportEnd
+                val activeUntil = expectationResult?.timestamp ?: reportEnd
                 if (last().timestamp != activeUntil) {
                     add(SampleChartRenderer.Point(activeUntil, currentValue))
                 }
             }
 
-            val resultSuffix = initial.result?.let { " (${it.value})" }.orEmpty()
+            val resultSuffix = expectationResult?.let { " (${it.value})" }.orEmpty()
             SampleChartRenderer.OverlaySeries(
                 label = "Expectation ${index + 1}$resultSuffix",
                 points = points,
