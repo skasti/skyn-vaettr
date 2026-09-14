@@ -24,15 +24,18 @@ class ExpectationTypesTest {
     }
 
     @Test
-    fun `expectation represents persistent belief state`() {
+    fun `expectation captures initial signal and expectation values`() {
         val expectation = Expectation(
             signal = signal,
+            signalInitialValue = 20.0,
             value = 21.2,
             formedAt = t0,
             confidence = 0.8,
         )
 
         assertEquals(signal, expectation.signal)
+        assertEquals(20.0, expectation.signalInitialValue)
+        assertEquals(21.2, expectation.expectationInitialValue)
         assertEquals(21.2, expectation.value)
         assertEquals(t0, expectation.formedAt)
         assertEquals(0.8, expectation.confidence)
@@ -41,20 +44,21 @@ class ExpectationTypesTest {
     @Test
     fun `expectation validates confidence`() {
         assertFailsWith<IllegalArgumentException> {
-            Expectation(signal, 21.0, t0, confidence = -0.01)
+            Expectation(signal, 20.0, 21.0, formedAt = t0, confidence = -0.01)
         }
         assertFailsWith<IllegalArgumentException> {
-            Expectation(signal, 21.0, t0, confidence = 1.01)
+            Expectation(signal, 20.0, 21.0, formedAt = t0, confidence = 1.01)
         }
         assertFailsWith<IllegalArgumentException> {
-            Expectation(signal, 21.0, t0, confidence = Double.NaN)
+            Expectation(signal, 20.0, 21.0, formedAt = t0, confidence = Double.NaN)
         }
     }
 
     @Test
-    fun `expectation can be refined without changing when it was formed`() {
+    fun `expectation can be refined without moving its initial references`() {
         val initial = Expectation(
             signal = signal,
+            signalInitialValue = 20.0,
             value = 21.0,
             formedAt = t0,
             confidence = 0.6,
@@ -62,6 +66,8 @@ class ExpectationTypesTest {
 
         val refined = initial.copy(value = 21.2, confidence = 0.8)
 
+        assertEquals(20.0, refined.signalInitialValue)
+        assertEquals(21.0, refined.expectationInitialValue)
         assertEquals(21.2, refined.value)
         assertEquals(0.8, refined.confidence)
         assertEquals(t0, refined.formedAt)
