@@ -32,6 +32,25 @@ world.simulate(...) { samples ->
 
 The same shape also fits an event-driven integration such as Home Assistant: `sense(...)` may be called at a fixed cadence or whenever one or more sensors update.
 
+## Minimal thermal expectation scenario
+
+`ThermalExpectationScenarioTest` is an executable example of the first learning problem this runtime should support.
+
+```mermaid
+flowchart LR
+    Outside["sensor.outdoor.temperature\n10–25 °C sine wave"] --> Thermal["Wall / insulation lag\n10% of remaining delta per hour"]
+    Thermal --> Inside["sensor.indoor.temperature"]
+    Outside --> Sense[Vaettr.sense]
+    Inside --> Sense
+    Sense --> Store[SampleStore history]
+    Store --> Model[Learned model]
+    Model --> Expectation["Running expectation of future\nindoor temperature"]
+```
+
+Outdoor temperature follows a 24-hour sine wave between 10 °C and 25 °C. Indoor temperature moves toward the current outdoor temperature with a default hourly delta fraction of 10%. The implementation uses exponential retention rather than a naive fixed-per-step update, so the thermal time constant remains approximately stable if the sensing interval changes.
+
+The scenario feeds only the two sensor streams into `Vaettr`. It deliberately contains no hand-coded predictor and does not expose the thermal equation to the processing graph. Its intended learning objective is for a later learned model to develop a continuously updated expectation of how `sensor.indoor.temperature` will evolve from accumulated experience.
+
 ## Canonical sample history
 
 `SampleStore` is the read boundary for historical observations. `MutableSampleStore` adds ingestion, and `InMemorySampleStore` is the initial process-local implementation used by experiments and the default runtime.
