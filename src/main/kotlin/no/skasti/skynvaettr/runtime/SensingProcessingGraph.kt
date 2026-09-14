@@ -5,6 +5,8 @@ import java.time.Instant
 import kotlin.math.abs
 import no.skasti.skynvaettr.models.Model
 import no.skasti.skynvaettr.models.PredictionDecoder
+import no.skasti.skynvaettr.models.PredictionRoute
+import no.skasti.skynvaettr.models.PredictionRouteFactory
 import no.skasti.skynvaettr.representation.Embedding
 import no.skasti.skynvaettr.representation.Embedder
 import no.skasti.skynvaettr.representation.Representation
@@ -23,6 +25,8 @@ import no.skasti.skynvaettr.signals.SignalId
  * Each selected observation is represented from signal identity + scalar value + relative time.
  * Compatible [Model] components then consume that [Representation] and emit another representation;
  * compatible [PredictionDecoder] components translate model output into runtime predictions.
+ * [PredictionRouteFactory] instances may also create graph-owned model/decoder routes for newly
+ * observed signals without requiring scenario-specific target wiring.
  */
 class SensingProcessingGraph(
     private val sampleStore: SampleStore,
@@ -30,8 +34,10 @@ class SensingProcessingGraph(
     private val historyAges: List<Duration> = DEFAULT_HISTORY_AGES,
     models: List<Model> = emptyList(),
     private val predictionDecoders: List<PredictionDecoder<*>> = emptyList(),
+    private val predictionRouteFactories: List<PredictionRouteFactory> = emptyList(),
 ) : ProcessingGraph {
     private val modelComponents = models.toList()
+    private val discoveredRoutes = linkedMapOf<SignalId, PredictionRoute>()
 
     var latestRepresentation: Representation? = null
         private set
@@ -47,6 +53,8 @@ class SensingProcessingGraph(
 
     override fun sense(samples: List<Sample<*>>) {
         if (samples.isEmpty()) return
+
+        discoverPredictionRoutes(samples)
 
         val now = samples.maxOf { it.timestamp }
         val history = sampleStore.get(now.minus(maxHistoryAge), now.plusNanos(1))
@@ -77,12 +85,36 @@ class SensingProcessingGraph(
                             )
                         }
                 }
+
+            discoveredRoutes.values.forEach { route ->
+                if (!route.model.supports(representation)) return@forEach
+                val output = route.model.forward(representation)
+                if (!route.decoder.supports(output)) return@forEach
+                add(
+                    PredictionExecution(
+                        model = route.model,
+                        decoder = route.decoder,
+                        input = representation,
+                        output = output,
+                        prediction = route.decoder.decode(output),
+                    ),
+                )
+            }
         }
     }
 
-    override fun models(): List<Model> = modelComponents.toList()
+    override fun models(): List<Model> =
+        (modelComponents + discoveredRoutes.values.map { it.model }).distinctBy { System.identityHashCode(it) }
 
     override fun predictionExecutions(): List<PredictionExecution> = latestExecutions.toList()
+
+    private fun discoverPredictionRoutes(samples: List<Sample<*>>) {
+        samples.forEach { sample ->
+            if (sample.signal.id in discoveredRoutes) return@forEach
+            val route = predictionRouteFactories.firstNotNullOfOrNull { it.create(sample) } ?: return@forEach
+            discoveredRoutes[sample.signal.id] = route
+        }
+    }
 
     private fun selectObservations(
         now: Instant,
