@@ -4,11 +4,11 @@ This document defines the minimal prediction/expectation boundary currently prom
 
 ## Prediction
 
-`Prediction<T>` is a model-produced value for one `Signal<T>` together with the model's current confidence in that prediction and the time it was produced.
+`Prediction<T>` is a model-produced value for one `Signal<T>` together with the model's current confidence in that prediction.
 
 Confidence is normalized to `0.0..1.0`. It describes the model's own support for the prediction; it does **not** mean that the runtime has committed to believing it.
 
-Predictions deliberately have no mandatory target timestamp or fixed forecast horizon. Temporal semantics belong to the model that produced them.
+Predictions deliberately have no creation time, mandatory target timestamp, or fixed forecast horizon. Timing, ordering and other temporal semantics belong to the model/runtime context around a prediction rather than to the value type itself.
 
 ## Expectation gate
 
@@ -16,7 +16,8 @@ A prediction may be considered by an expectation gate. The gate owns policy such
 
 - how much model confidence is needed before committing;
 - whether a new prediction should create an expectation;
-- whether a later prediction should reinforce an existing expectation;
+- whether another prediction should reinforce an existing expectation;
+- whether that prediction is sufficiently recent or otherwise eligible for reinforcement;
 - how much it should cost to hold the expectation;
 - how much reward fulfillment should represent.
 
@@ -34,7 +35,7 @@ It records:
 - `reward`, representing the value of fulfillment;
 - `confidence`, initialized from the prediction confidence.
 
-If the model later repeats the same signal/value prediction with greater confidence and the gate chooses to reinforce the expectation, the expectation confidence may increase. Core provides `reinforcedBy(...)` only to preserve those invariants; deciding whether reinforcement should occur remains gate policy.
+If the model repeats the same signal/value prediction with greater confidence and the gate chooses to reinforce the expectation, the expectation confidence may increase. Core provides `reinforcedBy(...)` only to preserve those invariants; deciding whether reinforcement should occur remains gate policy.
 
 ## Current boundary
 
@@ -44,7 +45,7 @@ The intended flow is therefore:
 flowchart LR
     M[Model] -->|Prediction + confidence| G[Expectation gate]
     G -->|commit| E[Expectation]
-    M -->|same prediction, later confidence| G
+    M -->|same prediction + confidence| G
     G -->|reinforce| E
 ```
 
