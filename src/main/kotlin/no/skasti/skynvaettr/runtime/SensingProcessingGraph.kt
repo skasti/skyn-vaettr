@@ -2,33 +2,32 @@ package no.skasti.skynvaettr.runtime
 
 import java.time.Duration
 import java.time.Instant
+import kotlin.math.abs
 import no.skasti.skynvaettr.representation.Embedding
 import no.skasti.skynvaettr.representation.Embedder
 import no.skasti.skynvaettr.representation.Representation
 import no.skasti.skynvaettr.representation.SignalIdentityEmbedder
 import no.skasti.skynvaettr.signals.Sample
+import no.skasti.skynvaettr.signals.SampleStore
 import no.skasti.skynvaettr.signals.SignalId
 
 /**
  * Initial default sensing graph based on the strongest generic sensory pattern explored in playpen.
  *
- * The graph keeps timestamped sensory history, selects the same generic log-spaced history ages for
- * every signal, and represents each observation from signal identity + scalar value + relative time.
+ * Historical observations come from the canonical [SampleStore]. Every signal is offered the same
+ * generic log-spaced history ages, and selected observations retain their actual timestamp rather
+ * than treating a sample as a state that remains valid until the next update.
  *
- * It deliberately stops before learned projection and attention. The successful playpen attention
- * experiments normalized values and learned the input/key/value projections and latent query from a
- * prediction objective. Applying attention directly to the untrained/raw representation would be a
- * materially different, unvalidated model.
- *
- * Prediction heads, learned contextualization, objectives, memory, effectors, training and
- * higher-level processing belong to later graph components.
+ * Each selected observation is represented from signal identity + scalar value + relative time.
+ * The graph deliberately stops before learned projection and attention. The successful playpen
+ * attention experiments normalized values and learned the input/key/value projections and latent
+ * query from a prediction objective.
  */
 class SensingProcessingGraph(
+    private val sampleStore: SampleStore,
     private val signalEmbedder: Embedder<SignalId> = SignalIdentityEmbedder(),
     private val historyAges: List<Duration> = DEFAULT_HISTORY_AGES,
 ) : ProcessingGraph {
-    private val history = mutableMapOf<SignalId, MutableList<Sample<*>>>()
-
     var latestRepresentation: Representation? = null
         private set
 
@@ -42,32 +41,48 @@ class SensingProcessingGraph(
     override fun sense(samples: List<Sample<*>>) {
         if (samples.isEmpty()) return
 
-        samples.sortedBy { it.timestamp }.forEach { sample ->
-            history.getOrPut(sample.signal.id) { mutableListOf() }.add(sample)
-        }
-
         val now = samples.maxOf { it.timestamp }
-        prune(now)
-        val observations = selectObservations(now)
+        val history = sampleStore.get(now.minus(maxHistoryAge), now.plusNanos(1))
+        val observations = selectObservations(now, history)
         if (observations.isEmpty()) return
 
         latestRepresentation = Representation.from(observations.map(::encode))
     }
 
-    private fun selectObservations(now: Instant): List<SensoryObservation> = buildList {
-        history.entries.sortedBy { it.key.value }.forEach { (_, samples) ->
-            historyAges.forEach ageLoop@{ age ->
-                val target = now.minus(age)
-                val selected = samples.lastOrNull { !it.timestamp.isAfter(target) } ?: return@ageLoop
-                add(
-                    SensoryObservation(
-                        sample = selected,
-                        relativeTime = -age.toMillis().toDouble() / maxHistoryAge.toMillis().toDouble(),
-                    ),
-                )
+    private fun selectObservations(
+        now: Instant,
+        history: List<Sample<*>>,
+    ): List<SensoryObservation> = buildList {
+        history
+            .groupBy { it.signal.id }
+            .toSortedMap(compareBy(SignalId::value))
+            .forEach { (_, signalSamples) ->
+                val selected = linkedSetOf<Sample<*>>()
+                historyAges.forEach { age ->
+                    val target = now.minus(age)
+                    signalSamples.minByOrNull { sample -> distanceMillis(sample.timestamp, target) }?.let(selected::add)
+                }
+                selected.sortedBy { it.timestamp }.forEach { sample ->
+                    add(
+                        SensoryObservation(
+                            sample = sample,
+                            relativeTime = relativeTime(sample.timestamp, now),
+                        ),
+                    )
+                }
             }
-        }
     }
+
+    private fun relativeTime(
+        timestamp: Instant,
+        now: Instant,
+    ): Double =
+        Duration.between(now, timestamp).toMillis().toDouble() / maxHistoryAge.toMillis().toDouble()
+
+    private fun distanceMillis(
+        left: Instant,
+        right: Instant,
+    ): Long = abs(Duration.between(left, right).toMillis())
 
     private fun encode(observation: SensoryObservation): Embedding {
         val identity = signalEmbedder.embed(observation.sample.signal.id).toDoubleArray()
@@ -84,18 +99,6 @@ class SensingProcessingGraph(
                     (value?.let { it::class.simpleName } ?: "null"),
             )
         }
-
-    private fun prune(now: Instant) {
-        val cutoff = now.minus(maxHistoryAge)
-        history.values.forEach { samples ->
-            val firstRetained = samples.indexOfFirst { !it.timestamp.isBefore(cutoff) }
-            if (firstRetained > 0) {
-                // Keep one sample before the horizon so nearest-at-or-before lookup can still resolve
-                // the oldest requested history position.
-                samples.subList(0, firstRetained - 1).clear()
-            }
-        }
-    }
 
     private val maxHistoryAge: Duration
         get() = historyAges.maxOrNull() ?: Duration.ZERO
