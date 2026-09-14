@@ -4,6 +4,7 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.sign
 import no.skasti.skynvaettr.signals.Sample
+import no.skasti.skynvaettr.signals.SignalId
 
 /**
  * Small horizon-free default policy for continuous numeric signals.
@@ -13,8 +14,8 @@ import no.skasti.skynvaettr.signals.Sample
  * confidence exploratory directional expectation. Stability expectations remain independently
  * configurable.
  *
- * Thresholds are expressed as fractions of the observed range with an absolute range floor. This is
- * a deliberately simple default, not a claim that these rules are generally optimal.
+ * Thresholds are expressed as fractions of each signal's own observed range with an absolute range
+ * floor. This is a deliberately simple default, not a claim that these rules are generally optimal.
  */
 class NumericExpectationPolicy(
     private val minimumPredictionConfidence: Double = 0.20,
@@ -28,8 +29,12 @@ class NumericExpectationPolicy(
     private val createStabilityExpectations: Boolean = true,
     private val createBootstrapExpectations: Boolean = true,
 ) : ExpectationPolicy<Double> {
-    private var minimumObserved = Double.POSITIVE_INFINITY
-    private var maximumObserved = Double.NEGATIVE_INFINITY
+    private data class ObservedRange(
+        var minimum: Double = Double.POSITIVE_INFINITY,
+        var maximum: Double = Double.NEGATIVE_INFINITY,
+    )
+
+    private val observedRanges = mutableMapOf<SignalId, ObservedRange>()
 
     init {
         require(minimumPredictionConfidence in 0.0..1.0)
@@ -49,10 +54,10 @@ class NumericExpectationPolicy(
         previous: Sample<Double>?,
         current: Sample<Double>,
     ): Expectation<Double>? {
-        previous?.let { observe(it.value) }
-        observe(current.value)
+        previous?.let(::observe)
+        observe(current)
 
-        val scale = observedRange()
+        val scale = observedRange(current.signal.id)
         val materialDifference = scale * materialPredictionFraction
         val usePrediction =
             prediction.confidence >= minimumPredictionConfidence &&
@@ -99,8 +104,8 @@ class NumericExpectationPolicy(
         previous: Sample<Double>?,
         current: Sample<Double>,
     ): ExpectationAssessment<Double>? {
-        observe(current.value)
-        val scale = observedRange()
+        observe(current)
+        val scale = observedRange(current.signal.id)
         val isStabilityExpectation =
             abs(expectation.expectationInitialValue - expectation.signalInitialValue) <= 1e-12
 
@@ -126,8 +131,7 @@ class NumericExpectationPolicy(
         }
 
         if (previous != null) {
-            val expectedDirection =
-                sign(expectation.expectationInitialValue - expectation.signalInitialValue)
+            val expectedDirection = sign(expectation.expectationInitialValue - expectation.signalInitialValue)
             val progress = expectedDirection * (current.value - previous.value)
             val oppositeMovement = max(0.0, -progress / scale)
             if (oppositeMovement >= oppositeMovementFraction) {
@@ -143,12 +147,15 @@ class NumericExpectationPolicy(
         return null
     }
 
-    private fun observe(value: Double) {
-        require(value.isFinite()) { "Observed numeric values must be finite" }
-        minimumObserved = minOf(minimumObserved, value)
-        maximumObserved = maxOf(maximumObserved, value)
+    private fun observe(sample: Sample<Double>) {
+        require(sample.value.isFinite()) { "Observed numeric values must be finite" }
+        val range = observedRanges.getOrPut(sample.signal.id, ::ObservedRange)
+        range.minimum = minOf(range.minimum, sample.value)
+        range.maximum = maxOf(range.maximum, sample.value)
     }
 
-    private fun observedRange(): Double =
-        max(maximumObserved - minimumObserved, rangeFloor)
+    private fun observedRange(signalId: SignalId): Double {
+        val range = observedRanges[signalId] ?: return rangeFloor
+        return max(range.maximum - range.minimum, rangeFloor)
+    }
 }
