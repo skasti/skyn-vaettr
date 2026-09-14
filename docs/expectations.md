@@ -39,7 +39,7 @@ Unlike a `Prediction`, it is not a frozen snapshot of one model output. It recor
 
 Compatible later predictions may cause the gate to refine the value and confidence while preserving the same expectation and its original `formedAt`. Core deliberately does not provide a built-in `reinforcedBy(...)` operation because deciding compatibility and update semantics is gate/policy behavior.
 
-Cost, reward and other utility calculations are intentionally external. They may depend on the subsystem, environment or policy that creates and evaluates an expectation, and therefore are not intrinsic properties of the expectation itself.
+Cost, reward and other utility calculations are intentionally external. They depend on the subsystem, environment or policy evaluating the expectation rather than being intrinsic properties of the belief itself.
 
 ## Current boundary
 
@@ -52,7 +52,7 @@ flowchart LR
     M -->|later prediction| G
     G -->|compatible: refine / reinforce| E
     G -->|incompatible: supersede| N[New expectation]
-    G -.->|policy computes utility / cost / reward externally| U[Policy state]
+    G -.->|compute utility externally| U[Policy / subsystem state]
 ```
 
 The distinction is therefore:
