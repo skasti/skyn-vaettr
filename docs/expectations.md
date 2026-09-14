@@ -20,8 +20,7 @@ A prediction may be considered by an expectation gate. The gate owns policy such
 - whether a compatible prediction should refine the expected value, reinforce confidence, or both;
 - whether an incompatible prediction should supersede the existing expectation;
 - whether a prediction is sufficiently recent or otherwise eligible;
-- how much it should cost to hold the expectation;
-- how much reward fulfillment should represent.
+- what utility, cost or reward should be associated with creating, maintaining, fulfilling or violating an expectation.
 
 Compatibility is intentionally policy-level rather than simple value equality. For example, a temperature prediction moving from `21.0` to `21.2` may refine the same expectation, while a binary state changing from `true` to `false` may represent an incompatible belief.
 
@@ -31,16 +30,16 @@ These rules are deliberately not encoded in `Prediction` or `Expectation`.
 
 `Expectation<T>` represents a persistent belief after the expectation gate has decided a model prediction is worth committing to.
 
-Unlike a `Prediction`, it is not a frozen snapshot of one model output. It records:
+Unlike a `Prediction`, it is not a frozen snapshot of one model output. It records only the belief state needed by core:
 
 - the `Signal<T>` the belief concerns;
 - the currently expected value;
 - when the expectation was first formed;
-- `cost`, representing how expensive the commitment is;
-- `reward`, representing the value of fulfillment;
 - the current expectation confidence.
 
 Compatible later predictions may cause the gate to refine the value and confidence while preserving the same expectation and its original `formedAt`. Core deliberately does not provide a built-in `reinforcedBy(...)` operation because deciding compatibility and update semantics is gate/policy behavior.
+
+Cost, reward and other utility calculations are intentionally external. They may depend on the subsystem, environment or policy that creates and evaluates an expectation, and therefore are not intrinsic properties of the expectation itself.
 
 ## Current boundary
 
@@ -53,6 +52,7 @@ flowchart LR
     M -->|later prediction| G
     G -->|compatible: refine / reinforce| E
     G -->|incompatible: supersede| N[New expectation]
+    G -.->|policy computes utility / cost / reward externally| U[Policy state]
 ```
 
 The distinction is therefore:
@@ -63,4 +63,4 @@ flowchart TB
     E[Expectation] -->|persistent runtime belief| B[Belief that can be refined]
 ```
 
-This PR intentionally stops here. Violation detection, surprise, experience records, fulfillment evaluation, reward delivery, lifecycle/expiry and replay policy should be introduced only when experiments establish useful semantics for them.
+This PR intentionally stops here. Violation detection, surprise, experience records, fulfillment evaluation, utility/reward delivery, lifecycle/expiry and replay policy should be introduced only when experiments establish useful semantics for them.
