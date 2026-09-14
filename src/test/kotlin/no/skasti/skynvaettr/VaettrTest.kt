@@ -37,7 +37,26 @@ class VaettrTest {
     }
 
     @Test
-    fun `trainers are notified after samples are stored`() {
+    fun `trainer is notified after graph completes the sense cycle`() {
+        val order = mutableListOf<String>()
+        val sample = Sample(Signal<Double>("sensor.indoor.temperature"), 21.5, Instant.EPOCH)
+        val graph = ProcessingGraph { order += "graph" }
+        val trainer = Trainer { received ->
+            assertEquals(listOf(sample), received)
+            order += "trainer"
+        }
+        val vaettr = Vaettr(
+            graph = graph,
+            trainers = listOf(trainer),
+        )
+
+        vaettr.sense(sample)
+
+        assertEquals(listOf("graph", "trainer"), order)
+    }
+
+    @Test
+    fun `trainers can read samples already committed to store on sense completion`() {
         val store = InMemorySampleStore()
         val sample = Sample(Signal<Double>("sensor.indoor.temperature"), 21.5, Instant.EPOCH)
         var trainerSawStoredSample = false
