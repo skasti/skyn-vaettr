@@ -96,9 +96,12 @@ object ThermalExpectationReport {
             inspected over time. Each graph contains only that day's observations and the expectations known at the end
             of that day; later outcomes are therefore not leaked into earlier snapshots.
 
-            The model emits horizon-free predictions. `ExpectationTrainer` turns those into persistent expectations,
-            lets the lifecycle policy resolve them from later observations, then trains on the value observed at the
-            actual resolution point. No +1/+5/+10 minute target exists in this example.
+            For this run, **stability expectations are disabled**. The numeric policy only commits to predictions that
+            are confident and materially different from the current signal value; otherwise it forms no expectation.
+
+            The model emits horizon-free predictions. `ExpectationTrainer` turns committed predictions into persistent
+            expectations, lets the lifecycle policy resolve them from later observations, then trains on the value observed
+            at the actual resolution point. No +1/+5/+10 minute target exists in this example.
 
             After ten days: resolved expectations: **$resolved** (`Fulfilled`: **$fulfilled**, `Violated`: **$violated**).
             Replayable expectation episodes: **${experiences.size}**.
