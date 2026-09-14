@@ -2,17 +2,22 @@ package no.skasti.skynvaettr.training
 
 import no.skasti.skynvaettr.episodes.EpisodeDefinition
 import no.skasti.skynvaettr.expectations.Expectation
+import no.skasti.skynvaettr.models.PredictionDecoder
+import no.skasti.skynvaettr.models.TrainableModel
+import no.skasti.skynvaettr.representation.Representation
 
 /**
- * One resolved expectation together with the episode and model input that produced it.
+ * One resolved expectation together with the latent model context that produced it.
  *
  * [priority] is intentionally generic. A lifecycle policy may interpret it as surprise, cost,
  * utility, prediction miss, or another replay signal without changing the episode model.
  */
-data class ExpectationExperience<I, T>(
+data class ExpectationExperience<T>(
     val episode: EpisodeDefinition,
     val expectation: Expectation<T>,
-    val input: I,
+    val model: TrainableModel,
+    val decoder: PredictionDecoder<T>,
+    val input: Representation,
     val observedValue: T,
     val priority: Double,
 ) {
