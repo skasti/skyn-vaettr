@@ -37,6 +37,8 @@ class NumericExpectationPolicy(
         require(rangeFloor > 0.0 && rangeFloor.isFinite())
     }
 
+    override fun supports(prediction: Prediction<*>): Boolean = prediction.value is Double
+
     override fun open(
         prediction: Prediction<Double>,
         current: Sample<Double>,
