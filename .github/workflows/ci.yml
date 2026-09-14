@@ -6,6 +6,9 @@ on:
     branches:
       - main
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -19,4 +22,100 @@ jobs:
       - uses: gradle/actions/setup-gradle@v5
         with:
           gradle-version: "8.10.2"
-      - run: gradle test --no-daemon
+      - name: Run tests
+        run: gradle test --no-daemon
+      - name: Render example reports
+        run: gradle renderExampleReports --no-daemon
+      - name: Upload example reports
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: example-reports
+          path: build/reports/examples
+          if-no-files-found: warn
+
+  publish-report:
+    needs: test
+    if: >
+      needs.test.result == 'success' &&
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Download example reports
+        uses: actions/download-artifact@v7
+        with:
+          name: example-reports
+          path: build/reports/examples
+
+      - name: Publish thermal example graph and summary
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          RESULTS_BRANCH: ci-results
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          report_dir="build/reports/examples/thermal-expectation"
+          graph="$report_dir/day.png"
+          summary="$report_dir/summary.md"
+
+          test -f "$graph"
+          test -f "$summary"
+
+          if ! gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$RESULTS_BRANCH" >/dev/null 2>&1; then
+            gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+              -f ref="refs/heads/$RESULTS_BRANCH" \
+              -f sha="$BASE_SHA" >/dev/null
+          fi
+
+          target="ci-results/pr-$PR_NUMBER/examples/thermal-expectation/day.png"
+          encoded_file=$(mktemp)
+          payload_file=$(mktemp)
+          base64 -w0 "$graph" > "$encoded_file"
+
+          published=false
+          for attempt in 1 2 3; do
+            existing_sha=$(gh api "repos/$GITHUB_REPOSITORY/contents/$target?ref=$RESULTS_BRANCH" --jq '.sha' 2>/dev/null || true)
+
+            if [ -n "$existing_sha" ]; then
+              jq -n \
+                --rawfile content "$encoded_file" \
+                --arg message "ci: update PR $PR_NUMBER thermal example graph" \
+                --arg branch "$RESULTS_BRANCH" \
+                --arg sha "$existing_sha" \
+                '{message: $message, content: $content, branch: $branch, sha: $sha}' \
+                > "$payload_file"
+            else
+              jq -n \
+                --rawfile content "$encoded_file" \
+                --arg message "ci: publish PR $PR_NUMBER thermal example graph" \
+                --arg branch "$RESULTS_BRANCH" \
+                '{message: $message, content: $content, branch: $branch}' \
+                > "$payload_file"
+            fi
+
+            if gh api --method PUT "repos/$GITHUB_REPOSITORY/contents/$target" --input "$payload_file" >/dev/null 2>&1; then
+              published=true
+              break
+            fi
+
+            echo "Graph publish raced with another update; retrying ($attempt/3)"
+            sleep "$attempt"
+          done
+
+          rm -f "$encoded_file" "$payload_file"
+          if [ "$published" != true ]; then
+            echo "Failed to publish $target after 3 attempts" >&2
+            exit 1
+          fi
+
+          cat "$summary" >> "$GITHUB_STEP_SUMMARY"
+          printf '\n![Thermal expectation example](https://raw.githubusercontent.com/%s/%s/pr-%s/examples/thermal-expectation/day.png?run=%s)\n' \
+            "$GITHUB_REPOSITORY" "$RESULTS_BRANCH" "$PR_NUMBER" "$GITHUB_RUN_ID" \
+            >> "$GITHUB_STEP_SUMMARY"
