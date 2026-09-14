@@ -20,14 +20,16 @@ data class ExpectationAssessment<T>(
  *
  * Implementations declare which decoded prediction values they understand, decide what is worth
  * committing to, and decide when an active expectation has accumulated enough evidence to resolve.
- * [open] may return null when the prediction is not worth committing to. The contract deliberately
- * has no fixed forecast horizon.
+ * [open] may inspect the preceding observation to support horizon-free bootstrap/exploration and may
+ * return null when there is not enough evidence to commit. The contract deliberately has no fixed
+ * forecast horizon.
  */
 interface ExpectationPolicy<T> {
     fun supports(prediction: Prediction<*>): Boolean
 
     fun open(
         prediction: Prediction<T>,
+        previous: Sample<T>?,
         current: Sample<T>,
     ): Expectation<T>?
 
