@@ -142,7 +142,13 @@ class ExpectationTrainer<T>(
             @Suppress("UNCHECKED_CAST")
             val typedCurrent = current as Sample<T>
 
-            val expectation = policy.open(prediction, typedCurrent) ?: return@forEach
+            val previous = sampleStore
+                .get(Instant.MIN, typedCurrent.timestamp, prediction.signal.id)
+                .lastOrNull()
+            @Suppress("UNCHECKED_CAST")
+            val typedPrevious = previous as Sample<T>?
+
+            val expectation = policy.open(prediction, typedPrevious, typedCurrent) ?: return@forEach
             activeExpectations += Active(
                 model = model,
                 decoder = decoder,
