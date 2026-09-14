@@ -44,6 +44,7 @@ jobs:
     permissions:
       actions: read
       contents: write
+      issues: write
     steps:
       - name: Download example reports
         uses: actions/download-artifact@v7
@@ -63,6 +64,7 @@ jobs:
 
           report_dir="build/reports/examples/thermal-expectation"
           summary="$report_dir/summary.md"
+          comment_marker='<!-- thermal-expectation-report -->'
 
           test -f "$summary"
           test -f "$report_dir/day.png"
@@ -129,10 +131,28 @@ jobs:
             "pr-$PR_NUMBER/examples/thermal-expectation/expectations.png" \
             "thermal expectation graph"
 
+          day_url="https://raw.githubusercontent.com/$GITHUB_REPOSITORY/$RESULTS_BRANCH/pr-$PR_NUMBER/examples/thermal-expectation/day.png?run=$GITHUB_RUN_ID"
+          expectations_url="https://raw.githubusercontent.com/$GITHUB_REPOSITORY/$RESULTS_BRANCH/pr-$PR_NUMBER/examples/thermal-expectation/expectations.png?run=$GITHUB_RUN_ID"
+
+          comment_file=$(mktemp)
+          {
+            printf '%s\n\n' "$comment_marker"
+            cat "$summary"
+            printf '\n![Thermal expectation example](%s)\n' "$day_url"
+            printf '\n![Learned expectation series](%s)\n' "$expectations_url"
+          } > "$comment_file"
+
+          gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
+            --jq ".[] | select(.body | contains(\"$comment_marker\")) | .id" \
+            | while read -r comment_id; do
+                [ -z "$comment_id" ] || gh api --method DELETE "repos/$GITHUB_REPOSITORY/issues/comments/$comment_id"
+              done
+
+          jq -Rs '{body: .}' "$comment_file" \
+            | gh api --method POST "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --input - >/dev/null
+
           cat "$summary" >> "$GITHUB_STEP_SUMMARY"
-          printf '\n![Thermal expectation example](https://raw.githubusercontent.com/%s/%s/pr-%s/examples/thermal-expectation/day.png?run=%s)\n' \
-            "$GITHUB_REPOSITORY" "$RESULTS_BRANCH" "$PR_NUMBER" "$GITHUB_RUN_ID" \
-            >> "$GITHUB_STEP_SUMMARY"
-          printf '\n![Illustrative expectation series](https://raw.githubusercontent.com/%s/%s/pr-%s/examples/thermal-expectation/expectations.png?run=%s)\n' \
-            "$GITHUB_REPOSITORY" "$RESULTS_BRANCH" "$PR_NUMBER" "$GITHUB_RUN_ID" \
-            >> "$GITHUB_STEP_SUMMARY"
+          printf '\n![Thermal expectation example](%s)\n' "$day_url" >> "$GITHUB_STEP_SUMMARY"
+          printf '\n![Learned expectation series](%s)\n' "$expectations_url" >> "$GITHUB_STEP_SUMMARY"
+
+          rm -f "$comment_file"
