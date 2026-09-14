@@ -20,7 +20,8 @@ A prediction may be considered by an expectation gate. The gate owns policy such
 - whether a compatible prediction should refine the expected value, reinforce confidence, or both;
 - whether an incompatible prediction should supersede the existing expectation;
 - whether a prediction is sufficiently recent or otherwise eligible;
-- what utility, cost or reward should be associated with creating, maintaining, fulfilling or violating an expectation.
+- what utility, cost or reward should be associated with creating, maintaining, fulfilling or violating an expectation;
+- when an expectation stops being active and which result value should describe that outcome.
 
 Compatibility is intentionally policy-level rather than simple value equality. For example, a temperature prediction moving from `21.0` to `21.2` may refine the same expectation, while a binary state changing from `true` to `false` may represent an incompatible belief.
 
@@ -39,9 +40,24 @@ Unlike a `Prediction`, it is not a frozen snapshot of one model output. It recor
 - `expectationInitialValue`, the initially expected value, equal to `value` when the expectation is created;
 - `value`, the currently expected value;
 - when the expectation was first formed;
-- the current expectation confidence.
+- the current expectation confidence;
+- an optional `ExpectationResult` once the expectation is no longer active.
 
 Compatible later predictions may cause the gate to refine `value` and confidence while preserving `signalInitialValue`, `expectationInitialValue` and the original `formedAt`. This preserves both where reality started and what the belief originally committed to, which can later support visualization and policy-level evaluation without allowing gradual refinement to erase the original prediction.
+
+`ExpectationResult` contains an open-ended string `value` and the `timestamp` when the expectation stopped being active. Core deliberately does not define a fixed result vocabulary. A subsystem may use values such as `Fulfilled`, `Abandoned`, `Superseded` or something domain-specific without changing the core type.
+
+The lifecycle is therefore:
+
+```mermaid
+stateDiagram-v2
+    [*] --> Active: expectation formed
+    Active --> Active: compatible refinement
+    Active --> Result: subsystem records result
+    Result --> [*]
+```
+
+A null `result` means the expectation is still active. A non-null result closes its active interval at `result.timestamp`.
 
 Core deliberately does not provide a built-in `reinforcedBy(...)` operation because deciding compatibility and update semantics is gate/policy behavior.
 
@@ -59,6 +75,7 @@ flowchart LR
     M -->|later prediction| G
     G -->|compatible: refine value / confidence| E
     G -->|incompatible or excessive drift: supersede| N[New expectation]
+    G -->|close lifecycle| R[ExpectationResult]
     G -.->|compute utility externally| U[Policy / subsystem state]
 ```
 
@@ -71,4 +88,4 @@ flowchart LR
     E --> V[value\nCurrent refinable expected value]
 ```
 
-This PR intentionally stops here. Violation detection, surprise, experience records, fulfillment evaluation, utility/reward delivery, lifecycle/expiry and replay policy should be introduced only when experiments establish useful semantics for them.
+This PR intentionally stops here. Violation detection, surprise, experience records, fulfillment evaluation, utility/reward delivery, lifecycle policy and replay policy should be introduced only when experiments establish useful semantics for them.
