@@ -23,4 +23,11 @@ class InMemorySampleStore : MutableSampleStore {
                 (selectedSignals.isEmpty() || sample.signal.id in selectedSignals)
         }
     }
+
+    override fun signalIds(): Set<SignalId> = samples.mapTo(linkedSetOf()) { it.signal.id }
+
+    override fun latestAtOrBefore(
+        signal: SignalId,
+        at: Instant,
+    ): Sample<*>? = samples.lastOrNull { it.signal.id == signal && !it.timestamp.isAfter(at) }
 }
