@@ -9,14 +9,20 @@ import no.skasti.skynvaettr.signals.Signal
  * An expectation is created by an external expectation gate after deciding that a model prediction
  * is worth believing. Unlike a [Prediction], an expectation is not a frozen snapshot of one model
  * output: compatible later predictions may cause the gate to refine [value] and [confidence] while
- * preserving the same expectation and its original [formedAt].
+ * preserving the same expectation and its original reference values.
+ *
+ * [signalInitialValue] is the observed value of [signal] when the expectation was formed.
+ * [expectationInitialValue] is the value initially expected when the belief was formed and defaults
+ * to [value]. Both initial values are intended to remain stable while [value] may be refined.
  *
  * Compatibility, refinement, reinforcement, superseding, lifecycle, utility/cost calculation,
  * fulfillment and learning policy remain outside this data type.
  */
 data class Expectation<T>(
     val signal: Signal<T>,
+    val signalInitialValue: T,
     val value: T,
+    val expectationInitialValue: T = value,
     val formedAt: Instant,
     val confidence: Double,
 ) {
