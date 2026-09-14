@@ -8,7 +8,6 @@ import no.skasti.skynvaettr.signals.Signal
 
 class ExpectationTypesTest {
     private val signal = Signal<Double>("sensor.temperature")
-    private val otherSignal = Signal<Double>("sensor.other_temperature")
     private val t0 = Instant.parse("2026-09-13T10:00:00Z")
 
     @Test
@@ -25,66 +24,58 @@ class ExpectationTypesTest {
     }
 
     @Test
-    fun `expectation starts from prediction confidence`() {
-        val prediction = Prediction(signal, 21.0, 0.6)
+    fun `expectation represents a persistent belief independently of a prediction snapshot`() {
         val expectation = Expectation(
-            prediction = prediction,
+            signal = signal,
+            value = 21.2,
             formedAt = t0,
             cost = 0.2,
             reward = 1.0,
+            confidence = 0.8,
         )
 
-        assertEquals(0.6, expectation.confidence)
+        assertEquals(signal, expectation.signal)
+        assertEquals(21.2, expectation.value)
+        assertEquals(t0, expectation.formedAt)
         assertEquals(0.2, expectation.cost)
         assertEquals(1.0, expectation.reward)
+        assertEquals(0.8, expectation.confidence)
     }
 
     @Test
     fun `expectation validates commitment values`() {
-        val prediction = Prediction(signal, 21.0, 0.6)
-
         assertFailsWith<IllegalArgumentException> {
-            Expectation(prediction, t0, cost = -0.1, reward = 1.0)
+            Expectation(signal, 21.0, t0, cost = -0.1, reward = 1.0, confidence = 0.6)
         }
         assertFailsWith<IllegalArgumentException> {
-            Expectation(prediction, t0, cost = 0.2, reward = -0.1)
+            Expectation(signal, 21.0, t0, cost = 0.2, reward = -0.1, confidence = 0.6)
         }
         assertFailsWith<IllegalArgumentException> {
-            Expectation(prediction, t0, cost = 0.2, reward = 1.0, confidence = 0.5)
+            Expectation(signal, 21.0, t0, cost = 0.2, reward = 1.0, confidence = -0.01)
+        }
+        assertFailsWith<IllegalArgumentException> {
+            Expectation(signal, 21.0, t0, cost = 0.2, reward = 1.0, confidence = 1.01)
+        }
+        assertFailsWith<IllegalArgumentException> {
+            Expectation(signal, 21.0, t0, cost = 0.2, reward = 1.0, confidence = Double.NaN)
         }
     }
 
     @Test
-    fun `matching prediction can reinforce confidence`() {
-        val initial = Prediction(signal, 21.0, 0.6)
-        val expectation = Expectation(initial, t0, cost = 0.2, reward = 1.0)
-        val reinforced = expectation.reinforcedBy(Prediction(signal, 21.0, 0.85))
+    fun `expectation can be refined without changing when it was formed`() {
+        val initial = Expectation(
+            signal = signal,
+            value = 21.0,
+            formedAt = t0,
+            cost = 0.2,
+            reward = 1.0,
+            confidence = 0.6,
+        )
 
-        assertEquals(0.85, reinforced.confidence)
-        assertEquals(t0, reinforced.formedAt)
-        assertEquals(0.2, reinforced.cost)
-        assertEquals(1.0, reinforced.reward)
-    }
+        val refined = initial.copy(value = 21.2, confidence = 0.8)
 
-    @Test
-    fun `reinforcement never lowers confidence`() {
-        val initial = Prediction(signal, 21.0, 0.8)
-        val expectation = Expectation(initial, t0, cost = 0.2, reward = 1.0)
-        val reinforced = expectation.reinforcedBy(Prediction(signal, 21.0, 0.7))
-
-        assertEquals(0.8, reinforced.confidence)
-    }
-
-    @Test
-    fun `reinforcement must represent the same prediction`() {
-        val initial = Prediction(signal, 21.0, 0.6)
-        val expectation = Expectation(initial, t0, cost = 0.2, reward = 1.0)
-
-        assertFailsWith<IllegalArgumentException> {
-            expectation.reinforcedBy(Prediction(otherSignal, 21.0, 0.8))
-        }
-        assertFailsWith<IllegalArgumentException> {
-            expectation.reinforcedBy(Prediction(signal, 22.0, 0.8))
-        }
+        assertEquals(21.2, refined.value)
+        assertEquals(0.8, refined.confidence)
+        assertEquals(t0, refined.formedAt)
     }
 }
