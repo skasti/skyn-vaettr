@@ -28,4 +28,17 @@ class VaettrTest {
 
         assertEquals(0, calls)
     }
+
+    @Test
+    fun `default vaettr accepts numeric sensory input`() {
+        val vaettr = Vaettr()
+
+        vaettr.sense(
+            Sample(
+                Signal<Double>("sensor.indoor.temperature"),
+                21.5,
+                Instant.EPOCH,
+            ),
+        )
+    }
 }
