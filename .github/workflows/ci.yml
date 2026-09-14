@@ -74,7 +74,7 @@ jobs:
               -f sha="$BASE_SHA" >/dev/null
           fi
 
-          target="ci-results/pr-$PR_NUMBER/examples/thermal-expectation/day.png"
+          target="pr-$PR_NUMBER/examples/thermal-expectation/day.png"
           encoded_file=$(mktemp)
           payload_file=$(mktemp)
           base64 -w0 "$graph" > "$encoded_file"
