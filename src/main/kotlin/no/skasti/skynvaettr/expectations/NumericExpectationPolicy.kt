@@ -8,10 +8,10 @@ import no.skasti.skynvaettr.signals.Sample
 /**
  * Small horizon-free default policy for continuous numeric signals.
  *
- * Low-confidence or immaterial predictions become stability expectations. Material predictions
- * become directional expectations toward the predicted value. Explicit expectations resolve when
- * the signal reaches the expected value or starts moving materially in the opposite direction;
- * stability expectations resolve when the signal moves far enough away from their origin.
+ * Low-confidence or immaterial predictions may become stability expectations when enabled. Material
+ * predictions become directional expectations toward the predicted value. Explicit expectations
+ * resolve when the signal reaches the expected value or starts moving materially in the opposite
+ * direction; stability expectations resolve when the signal moves far enough away from their origin.
  *
  * Thresholds are expressed as fractions of the observed range with an absolute range floor. This is
  * a deliberately simple default, not a claim that these rules are generally optimal.
@@ -23,6 +23,7 @@ class NumericExpectationPolicy(
     private val stabilityViolationFraction: Double = 0.035,
     private val oppositeMovementFraction: Double = 0.010,
     private val rangeFloor: Double = 1.0,
+    private val createStabilityExpectations: Boolean = true,
 ) : ExpectationPolicy<Double> {
     private var minimumObserved = Double.POSITIVE_INFINITY
     private var maximumObserved = Double.NEGATIVE_INFINITY
@@ -39,12 +40,16 @@ class NumericExpectationPolicy(
     override fun open(
         prediction: Prediction<Double>,
         current: Sample<Double>,
-    ): Expectation<Double> {
+    ): Expectation<Double>? {
         observe(current.value)
         val materialDifference = observedRange() * materialPredictionFraction
         val usePrediction =
             prediction.confidence >= minimumPredictionConfidence &&
                 abs(prediction.value - current.value) >= materialDifference
+
+        if (!usePrediction && !createStabilityExpectations) {
+            return null
+        }
 
         return Expectation(
             signal = current.signal,
