@@ -8,7 +8,7 @@ import java.time.Instant
  * An expectation is created by an external expectation gate after deciding that a model prediction
  * is worth believing. [cost] expresses how expensive that commitment is, while [reward] expresses
  * how valuable fulfillment would be. [confidence] starts from the prediction confidence and may
- * increase when the model later repeats the same prediction with greater confidence.
+ * increase when the gate accepts repeated support for the same prediction.
  *
  * Thresholds, gate policy, lifecycle, fulfillment and learning policy remain outside this data type.
  */
@@ -20,9 +20,6 @@ data class Expectation<T>(
     val confidence: Double = prediction.confidence,
 ) {
     init {
-        require(!formedAt.isBefore(prediction.createdAt)) {
-            "Expectation cannot be formed before its prediction was created"
-        }
         require(cost.isFinite() && cost >= 0.0) {
             "Expectation cost must be finite and non-negative"
         }
@@ -38,10 +35,11 @@ data class Expectation<T>(
     }
 
     /**
-     * Reinforce this expectation with a later model prediction for the same signal and value.
+     * Reinforce this expectation with another model prediction for the same signal and value.
      *
-     * Whether reinforcement should happen is a gate-policy decision. This helper only preserves the
-     * data-model invariants once the gate has made that decision.
+     * Whether reinforcement should happen, and whether the prediction is newer or otherwise eligible,
+     * is a gate-policy decision. This helper only preserves the data-model invariants once the gate has
+     * made that decision.
      */
     fun reinforcedBy(newPrediction: Prediction<T>): Expectation<T> {
         require(newPrediction.signal == prediction.signal) {
@@ -49,9 +47,6 @@ data class Expectation<T>(
         }
         require(newPrediction.value == prediction.value) {
             "Reinforcement prediction must predict the same value"
-        }
-        require(!newPrediction.createdAt.isBefore(prediction.createdAt)) {
-            "Reinforcement prediction cannot predate the current prediction"
         }
 
         return copy(
