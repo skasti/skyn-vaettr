@@ -6,6 +6,7 @@ import java.time.Duration
 import java.time.Instant
 import no.skasti.skynvaettr.examples.ThermalExpectationLearning
 import no.skasti.skynvaettr.expectations.Expectation
+import no.skasti.skynvaettr.models.OnlineKnnModel
 
 /** Renders the inspectable report for the minimal thermal expectation example. */
 object ThermalExpectationReport {
@@ -85,6 +86,8 @@ object ThermalExpectationReport {
         val fulfilled = learning.trainer.expectations.count { it.result?.value == "Fulfilled" }
         val violated = learning.trainer.expectations.count { it.result?.value == "Violated" }
         val experiences = learning.trainer.experiences
+        val models = learning.graph.models().filterIsInstance<OnlineKnnModel>()
+        val retainedTrainingExamples = models.sumOf { it.trainingExampleCount }
 
         Files.writeString(
             reportDir.resolve("summary.md"),
@@ -92,20 +95,25 @@ object ThermalExpectationReport {
             ## Thermal expectation example
 
             Ten simulated days using only `sensor.outdoor.temperature` and `sensor.indoor.temperature` as observations.
-            Learned expectation graphs are shown for days **1, 3, 5 and 10** so the default model's development can be
+            Neither signal is configured as a prediction target. The graph discovers one numeric prediction route per
+            observed compatible signal, while each predictor consumes the same complete sensory `Representation`.
+
+            Learned expectation graphs are shown for days **1, 3, 5 and 10** so the default models' development can be
             inspected over time. Each graph contains only that day's observations and the expectations known at the end
             of that day; later outcomes are therefore not leaked into earlier snapshots.
 
-            For this run, **stability expectations are disabled**. The numeric policy only commits to predictions that
-            are confident and materially different from the current signal value; otherwise it forms no expectation.
+            For this run, **stability expectations are disabled**. Low-confidence models bootstrap with low-confidence
+            exploratory directional expectations derived from observed movement. Once models gain experience, confident
+            material decoded predictions can form normal expectations.
 
-            The model emits horizon-free predictions. `ExpectationTrainer` turns committed predictions into persistent
+            Model outputs remain horizon-free. `ExpectationTrainer` turns decoded predictions into persistent
             expectations, lets the lifecycle policy resolve them from later observations, then trains on the value observed
             at the actual resolution point. No +1/+5/+10 minute target exists in this example.
 
-            After ten days: resolved expectations: **$resolved** (`Fulfilled`: **$fulfilled**, `Violated`: **$violated**).
+            After ten days: discovered numeric predictors: **${models.size}**.
+            Resolved expectations: **$resolved** (`Fulfilled`: **$fulfilled**, `Violated`: **$violated**).
             Replayable expectation episodes: **${experiences.size}**.
-            Model training examples currently retained: **${learning.model.trainingExampleCount}**.
+            Model training examples currently retained across predictors: **$retainedTrainingExamples**.
 
             Each expectation series runs from the signal value observed when the belief was formed
             (`signalInitialValue`) to the expectation's current `value` at its result time, or at the end of the graph
@@ -113,8 +121,8 @@ object ThermalExpectationReport {
             means **when the expectation was held**, not a forecast target timestamp.
 
             Replay selection is priority-weighted. The default numeric lifecycle currently assigns high priority to
-            surprising violations and low priority to fulfilled expectations. This is only a working baseline; both the
-            model and lifecycle/replay policies remain replaceable generic components.
+            surprising violations and low priority to fulfilled expectations. This is only a working baseline; model,
+            decoder discovery, lifecycle and replay policies remain replaceable components.
             """.trimIndent() + "\n",
         )
     }
