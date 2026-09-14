@@ -66,10 +66,13 @@ jobs:
           report_dir="build/reports/examples/thermal-expectation"
           summary="$report_dir/summary.md"
           comment_marker='<!-- thermal-expectation-report -->'
+          report_days=(1 3 5 10)
 
           test -f "$summary"
           test -f "$report_dir/day.png"
-          test -f "$report_dir/expectations.png"
+          for day in "${report_days[@]}"; do
+            test -f "$report_dir/expectations-day-$day.png"
+          done
 
           if ! gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$RESULTS_BRANCH" >/dev/null 2>&1; then
             gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
@@ -125,22 +128,26 @@ jobs:
           publish_graph \
             "$report_dir/day.png" \
             "pr-$PR_NUMBER/examples/thermal-expectation/day.png" \
-            "thermal example graph"
+            "thermal day 10 graph"
 
-          publish_graph \
-            "$report_dir/expectations.png" \
-            "pr-$PR_NUMBER/examples/thermal-expectation/expectations.png" \
-            "thermal expectation graph"
+          for day in "${report_days[@]}"; do
+            publish_graph \
+              "$report_dir/expectations-day-$day.png" \
+              "pr-$PR_NUMBER/examples/thermal-expectation/expectations-day-$day.png" \
+              "thermal expectation day $day graph"
+          done
 
           day_url="https://raw.githubusercontent.com/$GITHUB_REPOSITORY/$RESULTS_BRANCH/pr-$PR_NUMBER/examples/thermal-expectation/day.png?run=$GITHUB_RUN_ID"
-          expectations_url="https://raw.githubusercontent.com/$GITHUB_REPOSITORY/$RESULTS_BRANCH/pr-$PR_NUMBER/examples/thermal-expectation/expectations.png?run=$GITHUB_RUN_ID"
 
           comment_file=$(mktemp)
           {
             printf '%s\n\n' "$comment_marker"
             cat "$summary"
-            printf '\n![Thermal expectation example](%s)\n' "$day_url"
-            printf '\n![Learned expectation series](%s)\n' "$expectations_url"
+            printf '\n### Day 10 observations\n\n![Thermal expectation example](%s)\n' "$day_url"
+            for day in "${report_days[@]}"; do
+              expectation_url="https://raw.githubusercontent.com/$GITHUB_REPOSITORY/$RESULTS_BRANCH/pr-$PR_NUMBER/examples/thermal-expectation/expectations-day-$day.png?run=$GITHUB_RUN_ID"
+              printf '\n### Learned expectations — day %s\n\n![Learned expectation series day %s](%s)\n' "$day" "$day" "$expectation_url"
+            done
           } > "$comment_file"
 
           gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
@@ -153,7 +160,10 @@ jobs:
             | gh api --method POST "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --input - >/dev/null
 
           cat "$summary" >> "$GITHUB_STEP_SUMMARY"
-          printf '\n![Thermal expectation example](%s)\n' "$day_url" >> "$GITHUB_STEP_SUMMARY"
-          printf '\n![Learned expectation series](%s)\n' "$expectations_url" >> "$GITHUB_STEP_SUMMARY"
+          printf '\n### Day 10 observations\n\n![Thermal expectation example](%s)\n' "$day_url" >> "$GITHUB_STEP_SUMMARY"
+          for day in "${report_days[@]}"; do
+            expectation_url="https://raw.githubusercontent.com/$GITHUB_REPOSITORY/$RESULTS_BRANCH/pr-$PR_NUMBER/examples/thermal-expectation/expectations-day-$day.png?run=$GITHUB_RUN_ID"
+            printf '\n### Learned expectations — day %s\n\n![Learned expectation series day %s](%s)\n' "$day" "$day" "$expectation_url" >> "$GITHUB_STEP_SUMMARY"
+          done
 
           rm -f "$comment_file"
