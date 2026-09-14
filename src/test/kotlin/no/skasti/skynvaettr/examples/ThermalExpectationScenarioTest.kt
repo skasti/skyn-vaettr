@@ -5,11 +5,12 @@ import java.time.Instant
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 class ThermalExpectationScenarioTest {
     @Test
-    fun `thermal learner does not bootstrap without stability expectations`() {
+    fun `thermal model runs through graph but does not bootstrap without expectations`() {
         val learning = ThermalExpectationLearning()
         val world = learning.world
 
@@ -33,12 +34,19 @@ class ThermalExpectationScenarioTest {
         assertTrue(outdoorValues.max() <= 25.0 + 1e-9)
         assertTrue(indoorValues.zipWithNext().all { (a, b) -> abs(b - a) < 1.0 })
 
+        // Inference uses the generic sensory Representation and the graph-owned model/decoder.
+        assertSame(learning.model, learning.graph.models().single())
+        val execution = learning.graph.predictionExecutions().single()
+        assertSame(learning.model, execution.model)
+        assertEquals(world.indoorTemperature, execution.prediction.signal)
+        assertTrue(execution.input.positions > 0)
+
         // With stability expectations disabled the unseeded KNN starts at confidence 0.0.
-        // Those predictions are deliberately rejected, so no expectation can resolve into a
-        // training experience and the learner cannot bootstrap itself from this loop alone.
+        // Those decoded predictions are deliberately rejected, so expectation-driven training alone
+        // still needs a separate bootstrap mechanism.
         assertTrue(learning.trainer.expectations.isEmpty())
         assertTrue(learning.trainer.experiences.isEmpty())
         assertEquals(0, learning.model.trainingExampleCount)
-        assertEquals(null, learning.trainer.active)
+        assertTrue(learning.trainer.active.isEmpty())
     }
 }
