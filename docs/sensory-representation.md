@@ -2,26 +2,21 @@
 
 Skynvættr treats a running `Vaettr` as the external entry point and keeps its internal processing topology replaceable.
 
-```text
-World / adapters
-      |
-      | Samples
-      v
-    Vaettr
-      |
-      +----> MutableSampleStore  <---- trainers / replay / episodes
-      |
-      v
-ProcessingGraph
-   /   |    \
-  v    v     v
-perception  memory  higher-level models
-    \        /
-     \      /
-   Representation
+```mermaid
+flowchart TD
+    World[World / adapters] -->|Samples| Vaettr
+    Vaettr --> Store[MutableSampleStore]
+    Store --> Consumers[Trainers / replay / episodes]
+    Vaettr --> Graph[ProcessingGraph]
+    Graph --> Perception[Perception]
+    Graph --> Memory[Memory]
+    Graph --> Higher[Higher-level models]
+    Perception --> Representation[Representation]
+    Memory --> Representation
+    Higher --> Representation
 ```
 
-`Vaettr.sense(...)` is the canonical observation ingress for both simulations and live adapters. Every received sample is persisted to the configured `MutableSampleStore` before the processing graph or trainers are notified. This lets an entity begin with unknown signals and accumulate the history from which later understanding can be trained.
+`Vaettr.sense(...)` is the canonical observation ingress for both simulations and live adapters. Every received sample is persisted to the configured `MutableSampleStore` before the processing graph runs. Trainers are notified only after that sense cycle has completed, so online processing and later learning share one historical source of truth.
 
 `ProcessingGraph` is the topology boundary. Implementations may be linear pipelines or arbitrary directed graphs with fan-out, feedback loops, stateful modules, independent update schedules, and learned components. Core does not yet prescribe ports, scheduling, or module lifecycle.
 
@@ -47,11 +42,11 @@ The same store is intended to support online perception, episode construction, r
 
 ## Trainers
 
-A `Trainer` is attached to a running `Vaettr` and is notified after new samples have been stored. The runtime does not decide whether that notification causes training.
+A `Trainer` is attached to a running `Vaettr` and receives `onSenseCompleted(samples)` after the current sense cycle has persisted its samples and the processing graph has completed.
 
-The trainer owns that policy: it may train on every update, after enough new experience exists, when observed timestamps cross a simulated/runtime boundary such as a new day, or not at all. It may later use `EpisodeStore` plus `SampleStore` to select historical experience and train the model instances it owns.
+The trainer owns its training policy: it may train on every completed sense cycle, after enough new experience exists, when observed timestamps cross a simulated/runtime boundary such as a new day, or not at all. It may later use `EpisodeStore` plus `SampleStore` to select historical experience and train the model instances it owns.
 
-The current notification hook is deliberately only the first lifecycle boundary. It should not be interpreted as requiring all training to happen synchronously inside `sense()`. Trainers that need wall-clock schedules independent of sensory updates will need a runtime clock/scheduler attachment in a later revision; that scheduling mechanism belongs to the trainer/runtime lifecycle rather than the sensing graph.
+The current notification hook is deliberately only a lifecycle boundary. It should not be interpreted as requiring all training to happen synchronously inside `sense()`. Trainers that need wall-clock schedules independent of sensory updates will need a runtime clock/scheduler attachment in a later revision; that scheduling mechanism belongs to the trainer/runtime lifecycle rather than the sensing graph.
 
 ## Default sensing graph
 
@@ -109,7 +104,7 @@ This revision establishes:
 
 - `Vaettr` as the external sensory entry point;
 - `MutableSampleStore` as the canonical observation history written before processing;
-- `Trainer` as the owner of when training should run after new experience arrives;
+- `Trainer` as the owner of when training should run after a completed sense cycle;
 - `ProcessingGraph` as the replaceable internal topology boundary;
 - `SensingProcessingGraph` as the initial default sensory front-end;
 - `Representation`/`Embedding` as generic latent numeric data;
