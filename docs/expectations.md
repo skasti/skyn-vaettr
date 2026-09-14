@@ -37,6 +37,7 @@ A decoded prediction may be considered by an `ExpectationPolicy<T>`. The policy 
 - whether it supports the decoded prediction type;
 - how much confidence is needed before committing;
 - whether a prediction should create an expectation at all;
+- whether recent observed movement is enough to open a low-confidence exploratory expectation while a model is still untrained;
 - whether later evidence fulfills or violates an expectation;
 - whether later compatible predictions should refine an existing expectation;
 - what replay priority or surprise should be associated with the result.
@@ -118,7 +119,9 @@ Episode signal membership is derived from the canonical `SampleStore` history sp
 
 `NumericExpectationPolicy` is a small horizon-free lifecycle policy for continuous numeric predictions. Stability expectations can be enabled or disabled. The current thermal example disables them.
 
-With stability expectations disabled, the unseeded KNN currently exposes a deliberate cold-start problem: it begins with confidence `0.0`, the policy declines to form expectations, and expectation-driven learning has no resolved experience from which to bootstrap. A separate generic bootstrap/exploration mechanism is therefore still required; it should not be hidden inside model wiring or reintroduced as scenario-specific hand-coded features.
+To avoid a cold-start deadlock when a model has too little experience to produce a sufficiently confident prediction, the numeric policy can use the immediately preceding observation as weak exploratory evidence. If the signal has moved materially, it opens a low-confidence directional expectation in that same direction. The target distance is scale-normalized and at least as large as the policy's normal material-prediction threshold. Once such an exploratory expectation resolves, the resulting experience trains the same graph-owned model that produced the low-confidence prediction.
+
+This bootstrap path is still expectation-driven: it does not train on every next sample, does not introduce a fixed forecast horizon, and does not require scenario-specific feature wiring. It should nevertheless be treated as an exploration baseline rather than a final general solution for every signal type.
 
 ## Current boundary
 
@@ -139,4 +142,4 @@ flowchart LR
     --> M
 ```
 
-This revision intentionally establishes only the model/representation/decoder boundary and the minimum graph discovery needed by the expectation-learning experiment. General graph ports, scheduling, dynamic model creation, decoder discovery for previously unseen signal types, richer expectation refinement, and the cold-start mechanism remain experiment-driven follow-up work.
+This revision intentionally establishes only the model/representation/decoder boundary and the minimum graph discovery needed by the expectation-learning experiment. General graph ports, scheduling, dynamic model creation, decoder discovery for previously unseen signal types, richer expectation refinement, and broader bootstrap/exploration strategies remain experiment-driven follow-up work.
