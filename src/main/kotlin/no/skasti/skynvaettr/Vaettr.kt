@@ -14,7 +14,7 @@ import no.skasti.skynvaettr.training.Trainer
  * received sample is committed to [sampleStore] before the processing graph runs. Trainers are
  * notified only after the graph has completed the synchronous work for the same sense cycle, so
  * they can treat one [sense] call as one completed observation round while reading historical
- * experience from the canonical store when they choose to train.
+ * experience from the canonical store and discovering model executions from the graph.
  */
 class Vaettr(
     val sampleStore: MutableSampleStore = InMemorySampleStore(),
@@ -30,7 +30,7 @@ class Vaettr(
 
         sampleStore.append(samples)
         graph.sense(samples)
-        trainers.forEach { it.onSenseCompleted(samples) }
+        trainers.forEach { it.onSenseCompleted(samples, graph) }
     }
 
     fun sense(sample: Sample<*>) = sense(listOf(sample))
