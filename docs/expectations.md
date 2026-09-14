@@ -24,20 +24,26 @@ A prediction may be considered by an expectation gate. The gate owns policy such
 
 Compatibility is intentionally policy-level rather than simple value equality. For example, a temperature prediction moving from `21.0` to `21.2` may refine the same expectation, while a binary state changing from `true` to `false` may represent an incompatible belief.
 
+The gate may also compare the current refined value with `expectationInitialValue`. If the belief has drifted too far from what was initially expected, policy may choose to supersede it rather than continually move the target. How much drift is acceptable, and any additional cost associated with superseding, remain policy decisions.
+
 These rules are deliberately not encoded in `Prediction` or `Expectation`.
 
 ## Expectation
 
 `Expectation<T>` represents a persistent belief after the expectation gate has decided a model prediction is worth committing to.
 
-Unlike a `Prediction`, it is not a frozen snapshot of one model output. It records only the belief state needed by core:
+Unlike a `Prediction`, it is not a frozen snapshot of one model output. It records the belief state and stable reference points needed by core:
 
 - the `Signal<T>` the belief concerns;
-- the currently expected value;
+- `signalInitialValue`, the observed value of that same signal when the expectation was formed;
+- `expectationInitialValue`, the initially expected value, equal to `value` when the expectation is created;
+- `value`, the currently expected value;
 - when the expectation was first formed;
 - the current expectation confidence.
 
-Compatible later predictions may cause the gate to refine the value and confidence while preserving the same expectation and its original `formedAt`. Core deliberately does not provide a built-in `reinforcedBy(...)` operation because deciding compatibility and update semantics is gate/policy behavior.
+Compatible later predictions may cause the gate to refine `value` and confidence while preserving `signalInitialValue`, `expectationInitialValue` and the original `formedAt`. This preserves both where reality started and what the belief originally committed to, which can later support visualization and policy-level evaluation without allowing gradual refinement to erase the original prediction.
+
+Core deliberately does not provide a built-in `reinforcedBy(...)` operation because deciding compatibility and update semantics is gate/policy behavior.
 
 Cost, reward and other utility calculations are intentionally external. They depend on the subsystem, environment or policy evaluating the expectation rather than being intrinsic properties of the belief itself.
 
@@ -48,19 +54,21 @@ The intended flow is:
 ```mermaid
 flowchart LR
     M[Model] -->|Prediction value + confidence| G[Expectation gate]
+    S[Current signal value] -->|signalInitialValue on creation| G
     G -->|create| E[Expectation]
     M -->|later prediction| G
-    G -->|compatible: refine / reinforce| E
-    G -->|incompatible: supersede| N[New expectation]
+    G -->|compatible: refine value / confidence| E
+    G -->|incompatible or excessive drift: supersede| N[New expectation]
     G -.->|compute utility externally| U[Policy / subsystem state]
 ```
 
-The distinction is therefore:
+The stable reference points are:
 
 ```mermaid
-flowchart TB
-    P[Prediction] -->|momentary model output| S[Snapshot]
-    E[Expectation] -->|persistent runtime belief| B[Belief that can be refined]
+flowchart LR
+    SI[signalInitialValue\nObserved signal at formation] --> E[Expectation]
+    EI[expectationInitialValue\nInitial expected value] --> E
+    E --> V[value\nCurrent refinable expected value]
 ```
 
 This PR intentionally stops here. Violation detection, surprise, experience records, fulfillment evaluation, utility/reward delivery, lifecycle/expiry and replay policy should be introduced only when experiments establish useful semantics for them.
