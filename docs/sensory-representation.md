@@ -49,9 +49,9 @@ The same store is intended to support online perception, episode construction, r
 
 A `Trainer` is attached to a running `Vaettr` and is notified after new samples have been stored. The runtime does not decide whether that notification causes training.
 
-The trainer owns that policy: it may train on every update, after enough new experience exists, at simulated/runtime time boundaries such as nightly training, or not at all. It may later use `EpisodeStore` plus `SampleStore` to select historical experience and train the model instances it owns.
+The trainer owns that policy: it may train on every update, after enough new experience exists, when observed timestamps cross a simulated/runtime boundary such as a new day, or not at all. It may later use `EpisodeStore` plus `SampleStore` to select historical experience and train the model instances it owns.
 
-The current hook is intentionally small. It establishes that training policy belongs to trainers without yet prescribing scheduling threads, clocks, optimizers, model discovery or replay strategy.
+The current notification hook is deliberately only the first lifecycle boundary. It should not be interpreted as requiring all training to happen synchronously inside `sense()`. Trainers that need wall-clock schedules independent of sensory updates will need a runtime clock/scheduler attachment in a later revision; that scheduling mechanism belongs to the trainer/runtime lifecycle rather than the sensing graph.
 
 ## Default sensing graph
 
