@@ -63,6 +63,49 @@ Core deliberately does not provide a built-in `reinforcedBy(...)` operation beca
 
 Cost, reward and other utility calculations are intentionally external. They depend on the subsystem, environment or policy evaluating the expectation rather than being intrinsic properties of the belief itself.
 
+## Generic lifecycle policy
+
+`ExpectationPolicy<T>` is the replaceable boundary used by the default learning loop. It decides:
+
+- how a model `Prediction<T>` becomes an `Expectation<T>`;
+- whether a later observation resolves the expectation;
+- which open-ended `ExpectationResult` describes that resolution;
+- which non-negative priority should be attached to the resolved experience.
+
+The priority is deliberately not stored in `Expectation` itself. Different policies may interpret it as surprise, cost, utility, prediction miss or another replay signal.
+
+`NumericExpectationPolicy` is only a small default for continuous numeric signals. Low-confidence or immaterial predictions become stability expectations; material predictions become directional expectations. It can resolve expectations as `Fulfilled` or `Violated` from observed progress. These strings and thresholds are defaults, not core semantics.
+
+## Expectation-driven training
+
+`ExpectationTrainer<I, T>` provides a working generic training loop without adding a forecast horizon:
+
+```mermaid
+flowchart LR
+    S[Samples] --> M[Prediction model]
+    M --> P[Prediction]
+    P --> G[ExpectationPolicy]
+    G --> E[Expectation]
+    S --> G
+    G -->|resolved| R[ExpectationResult + priority]
+    E --> R
+    R --> X[ExpectationExperience]
+    X --> D[EpisodeDefinition]
+    X --> T[train current experience]
+    D --> H[canonical SampleStore history]
+    X --> Q[ReplaySelector]
+    Q --> T
+    T --> M
+```
+
+The trainer captures the model input when an expectation is formed. When policy later resolves that expectation, the value observed at the actual resolution point becomes the training target. The elapsed time may therefore differ from one experience to another; no `+1 minute`, `+5 minute`, or other fixed target horizon is implied.
+
+The resolved expectation also defines an episode spanning its lifetime (optionally with preceding context). Canonical samples remain in `SampleStore`; the episode only identifies which history belongs to that experience.
+
+`WeightedPriorityReplaySelector` is the current generic replay baseline. It samples old experiences proportionally to caller-provided priority with a small floor so low-priority experience is not made unreachable. The lifecycle policy, priority definition and replay selector are all replaceable.
+
+`OnlineKnnPredictionModel` is a dependency-free numeric-vector default that stores resolved training examples and predicts from nearby examples. It exists so the default runtime can actually learn end to end; it is not intended to establish k-nearest-neighbour learning as the preferred Skynvættr model architecture.
+
 ## Current boundary
 
 The intended flow is:
@@ -88,4 +131,4 @@ flowchart LR
     E --> V[value\nCurrent refinable expected value]
 ```
 
-This PR intentionally stops here. Violation detection, surprise, experience records, fulfillment evaluation, utility/reward delivery, lifecycle policy and replay policy should be introduced only when experiments establish useful semantics for them.
+The runtime now contains enough generic policy/model/trainer boundaries to exercise this loop end to end. More sophisticated violation detection, surprise models, expectation refinement, utility/reward delivery, model discovery and replay policies should still be promoted only when experiments establish useful semantics for them.
