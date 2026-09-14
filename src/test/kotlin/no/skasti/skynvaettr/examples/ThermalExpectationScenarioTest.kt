@@ -10,7 +10,7 @@ import kotlin.test.assertTrue
 
 class ThermalExpectationScenarioTest {
     @Test
-    fun `thermal model runs through graph but does not bootstrap without expectations`() {
+    fun `thermal model bootstraps directional expectations through graph`() {
         val learning = ThermalExpectationLearning()
         val world = learning.world
 
@@ -41,12 +41,16 @@ class ThermalExpectationScenarioTest {
         assertEquals(world.indoorTemperature, execution.prediction.signal)
         assertTrue(execution.input.positions > 0)
 
-        // With stability expectations disabled the unseeded KNN starts at confidence 0.0.
-        // Those decoded predictions are deliberately rejected, so expectation-driven training alone
-        // still needs a separate bootstrap mechanism.
-        assertTrue(learning.trainer.expectations.isEmpty())
-        assertTrue(learning.trainer.experiences.isEmpty())
-        assertEquals(0, learning.model.trainingExampleCount)
-        assertTrue(learning.trainer.active.isEmpty())
+        // Stability expectations remain disabled. Low-confidence cold-start predictions are instead
+        // bootstrapped from observed movement, which must create resolved directional experience and
+        // eventually train the graph-owned model.
+        assertTrue(learning.trainer.expectations.isNotEmpty())
+        assertTrue(learning.trainer.experiences.isNotEmpty())
+        assertTrue(learning.model.trainingExampleCount > 0)
+        assertTrue(
+            learning.trainer.expectations.all {
+                abs(it.expectationInitialValue - it.signalInitialValue) > 1e-12
+            },
+        )
     }
 }
