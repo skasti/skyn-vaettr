@@ -33,7 +33,8 @@ class VaettrTest {
 
         vaettr.sense(sample)
 
-        assertEquals(listOf(listOf(sample)), received)
+        val expected: List<List<Sample<*>>> = listOf(listOf(sample))
+        assertEquals(expected, received)
     }
 
     @Test
