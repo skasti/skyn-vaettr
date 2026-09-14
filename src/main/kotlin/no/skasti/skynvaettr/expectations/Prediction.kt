@@ -5,7 +5,8 @@ import no.skasti.skynvaettr.signals.Signal
 /**
  * A model-produced prediction for one signal value.
  *
- * [confidence] expresses how strongly the model currently supports this prediction. It is deliberately
+ * [confidence] expresses how strongly the model currently supports this prediction. It is normalized
+ * to 0.0..1.0, but is not necessarily a calibrated probability of correctness. It is deliberately
  * separate from expectation policy: an expectation gate may use confidence when deciding whether a
  * prediction is worth committing to, but the prediction itself does not encode that decision.
  *
