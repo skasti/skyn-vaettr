@@ -16,8 +16,9 @@ import no.skasti.skynvaettr.signals.Signal
  *
  * The trainer does not impose a forecast horizon. It captures the model input when an expectation
  * is formed, lets [policy] decide when that belief has resolved, and trains the model toward the
- * value observed at that resolution. The resulting episode spans the expectation lifecycle (plus
- * optional preceding context) and can be selected for replay by any [ReplaySelector].
+ * value observed at that resolution. The policy may also decline to form an expectation for a
+ * prediction. The resulting episode spans the expectation lifecycle (plus optional preceding
+ * context) and can be selected for replay by any [ReplaySelector].
  */
 class ExpectationTrainer<I, T>(
     private val sampleStore: SampleStore,
@@ -107,8 +108,9 @@ class ExpectationTrainer<I, T>(
             require(prediction.signal == targetSignal) {
                 "Prediction model returned ${prediction.signal.id}, expected ${targetSignal.id}"
             }
-            activeExpectation = policy.open(prediction, current)
-            activeInput = input
+            val opened = policy.open(prediction, current)
+            activeExpectation = opened
+            activeInput = if (opened != null) input else null
         }
 
         previousSample = current
