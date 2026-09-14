@@ -29,35 +29,25 @@ class ExpectationTypesTest {
             signal = signal,
             value = 21.2,
             formedAt = t0,
-            cost = 0.2,
-            reward = 1.0,
             confidence = 0.8,
         )
 
         assertEquals(signal, expectation.signal)
         assertEquals(21.2, expectation.value)
         assertEquals(t0, expectation.formedAt)
-        assertEquals(0.2, expectation.cost)
-        assertEquals(1.0, expectation.reward)
         assertEquals(0.8, expectation.confidence)
     }
 
     @Test
-    fun `expectation validates commitment values`() {
+    fun `expectation validates confidence`() {
         assertFailsWith<IllegalArgumentException> {
-            Expectation(signal, 21.0, t0, cost = -0.1, reward = 1.0, confidence = 0.6)
+            Expectation(signal, 21.0, t0, confidence = -0.01)
         }
         assertFailsWith<IllegalArgumentException> {
-            Expectation(signal, 21.0, t0, cost = 0.2, reward = -0.1, confidence = 0.6)
+            Expectation(signal, 21.0, t0, confidence = 1.01)
         }
         assertFailsWith<IllegalArgumentException> {
-            Expectation(signal, 21.0, t0, cost = 0.2, reward = 1.0, confidence = -0.01)
-        }
-        assertFailsWith<IllegalArgumentException> {
-            Expectation(signal, 21.0, t0, cost = 0.2, reward = 1.0, confidence = 1.01)
-        }
-        assertFailsWith<IllegalArgumentException> {
-            Expectation(signal, 21.0, t0, cost = 0.2, reward = 1.0, confidence = Double.NaN)
+            Expectation(signal, 21.0, t0, confidence = Double.NaN)
         }
     }
 
@@ -67,8 +57,6 @@ class ExpectationTypesTest {
             signal = signal,
             value = 21.0,
             formedAt = t0,
-            cost = 0.2,
-            reward = 1.0,
             confidence = 0.6,
         )
 
