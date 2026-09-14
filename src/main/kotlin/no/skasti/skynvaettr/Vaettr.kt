@@ -11,8 +11,10 @@ import no.skasti.skynvaettr.training.Trainer
  * One running Skynvættr instance.
  *
  * [sense] is the canonical observation ingress for both simulated and live environments. Every
- * received sample is committed to [sampleStore] before the processing graph and trainers are
- * notified, so online processing and later learning share one historical source of truth.
+ * received sample is committed to [sampleStore] before the processing graph runs. Trainers are
+ * notified only after the graph has completed the synchronous work for the same sense cycle, so
+ * they can treat one [sense] call as one completed observation round while reading historical
+ * experience from the canonical store when they choose to train.
  */
 class Vaettr(
     val sampleStore: MutableSampleStore = InMemorySampleStore(),
@@ -28,7 +30,7 @@ class Vaettr(
 
         sampleStore.append(samples)
         graph.sense(samples)
-        trainers.forEach { it.onSamplesStored(samples) }
+        trainers.forEach { it.onSenseCompleted(samples) }
     }
 
     fun sense(sample: Sample<*>) = sense(listOf(sample))
