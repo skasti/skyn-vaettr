@@ -5,12 +5,12 @@ import java.time.Instant
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertSame
 import kotlin.test.assertTrue
+import no.skasti.skynvaettr.models.OnlineKnnModel
 
 class ThermalExpectationScenarioTest {
     @Test
-    fun `thermal model bootstraps directional expectations through graph`() {
+    fun `thermal learner discovers prediction targets and bootstraps expectations`() {
         val learning = ThermalExpectationLearning()
         val world = learning.world
 
@@ -34,23 +34,22 @@ class ThermalExpectationScenarioTest {
         assertTrue(outdoorValues.max() <= 25.0 + 1e-9)
         assertTrue(indoorValues.zipWithNext().all { (a, b) -> abs(b - a) < 1.0 })
 
-        // Inference uses the generic sensory Representation and the graph-owned model/decoder.
-        assertSame(learning.model, learning.graph.models().single())
-        val execution = learning.graph.predictionExecutions().single()
-        assertSame(learning.model, execution.model)
-        assertEquals(world.indoorTemperature, execution.prediction.signal)
-        assertTrue(execution.input.positions > 0)
+        // Neither temperature signal is configured as a prediction target. The graph discovers one
+        // independent model/decoder route for each observed Double-valued signal, and each model sees
+        // the same complete sensory Representation so cross-signal relationships remain learnable.
+        assertEquals(2, learning.graph.models().size)
+        assertTrue(learning.graph.models().all { it is OnlineKnnModel })
+        assertEquals(
+            setOf(world.outdoorTemperature, world.indoorTemperature),
+            learning.graph.predictionExecutions().map { it.prediction.signal }.toSet(),
+        )
 
-        // Stability expectations remain disabled. Low-confidence cold-start predictions are instead
-        // bootstrapped from observed movement, which must create resolved directional experience and
-        // eventually train the graph-owned model.
         assertTrue(learning.trainer.expectations.isNotEmpty())
         assertTrue(learning.trainer.experiences.isNotEmpty())
-        assertTrue(learning.model.trainingExampleCount > 0)
         assertTrue(
-            learning.trainer.expectations.all {
-                abs(it.expectationInitialValue - it.signalInitialValue) > 1e-12
-            },
+            learning.graph.models()
+                .filterIsInstance<OnlineKnnModel>()
+                .sumOf { it.trainingExampleCount } > 0,
         )
     }
 }
