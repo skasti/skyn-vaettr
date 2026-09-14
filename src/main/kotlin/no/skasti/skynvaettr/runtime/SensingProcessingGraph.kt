@@ -2,8 +2,6 @@ package no.skasti.skynvaettr.runtime
 
 import java.time.Duration
 import java.time.Instant
-import no.skasti.skynvaettr.attention.Attention
-import no.skasti.skynvaettr.attention.ScaledDotProductAttention
 import no.skasti.skynvaettr.representation.Embedding
 import no.skasti.skynvaettr.representation.Embedder
 import no.skasti.skynvaettr.representation.Representation
@@ -15,15 +13,18 @@ import no.skasti.skynvaettr.signals.SignalId
  * Initial default sensing graph based on the strongest generic sensory pattern explored in playpen.
  *
  * The graph keeps timestamped sensory history, selects the same generic log-spaced history ages for
- * every signal, represents each observation from signal identity + scalar value + relative time,
- * and contextualizes the resulting positions with a replaceable attention implementation.
+ * every signal, and represents each observation from signal identity + scalar value + relative time.
  *
- * It deliberately stops at a generic [Representation]. Prediction heads, objectives, memory,
- * effectors, training and higher-level processing belong to later graph components.
+ * It deliberately stops before learned projection and attention. The successful playpen attention
+ * experiments normalized values and learned the input/key/value projections and latent query from a
+ * prediction objective. Applying attention directly to the untrained/raw representation would be a
+ * materially different, unvalidated model.
+ *
+ * Prediction heads, learned contextualization, objectives, memory, effectors, training and
+ * higher-level processing belong to later graph components.
  */
 class SensingProcessingGraph(
     private val signalEmbedder: Embedder<SignalId> = SignalIdentityEmbedder(),
-    private val attention: Attention = ScaledDotProductAttention(),
     private val historyAges: List<Duration> = DEFAULT_HISTORY_AGES,
 ) : ProcessingGraph {
     private val history = mutableMapOf<SignalId, MutableList<Sample<*>>>()
@@ -35,12 +36,13 @@ class SensingProcessingGraph(
         require(historyAges.isNotEmpty()) { "history ages must not be empty" }
         require(historyAges.all { !it.isNegative }) { "history ages must not be negative" }
         require(historyAges.any(Duration::isZero)) { "history ages must include the current observation" }
+        require(maxHistoryAge > Duration.ZERO) { "history ages must include at least one positive duration" }
     }
 
     override fun sense(samples: List<Sample<*>>) {
         if (samples.isEmpty()) return
 
-        samples.forEach { sample ->
+        samples.sortedBy { it.timestamp }.forEach { sample ->
             history.getOrPut(sample.signal.id) { mutableListOf() }.add(sample)
         }
 
@@ -49,15 +51,14 @@ class SensingProcessingGraph(
         val observations = selectObservations(now)
         if (observations.isEmpty()) return
 
-        val raw = Representation.from(observations.map(::encode))
-        latestRepresentation = attention.selfAttention(raw).output
+        latestRepresentation = Representation.from(observations.map(::encode))
     }
 
     private fun selectObservations(now: Instant): List<SensoryObservation> = buildList {
         history.entries.sortedBy { it.key.value }.forEach { (_, samples) ->
-            historyAges.forEach { age ->
+            historyAges.forEach ageLoop@{ age ->
                 val target = now.minus(age)
-                val selected = samples.lastOrNull { !it.timestamp.isAfter(target) } ?: return@forEach
+                val selected = samples.lastOrNull { !it.timestamp.isAfter(target) } ?: return@ageLoop
                 add(
                     SensoryObservation(
                         sample = selected,
@@ -78,7 +79,10 @@ class SensingProcessingGraph(
         when (value) {
             is Number -> value.toDouble().also { require(it.isFinite()) { "numeric sample values must be finite" } }
             is Boolean -> if (value) 1.0 else 0.0
-            else -> error("Default sensing graph currently supports Number and Boolean sample values, got ${value?.let { it::class.simpleName } ?: "null"}")
+            else -> error(
+                "Default sensing graph currently supports Number and Boolean sample values, got " +
+                    (value?.let { it::class.simpleName } ?: "null"),
+            )
         }
 
     private fun prune(now: Instant) {
