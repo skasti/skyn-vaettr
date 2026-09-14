@@ -24,4 +24,13 @@ interface SampleStore {
         vararg signals: SignalId,
     ): List<Sample<*>> =
         get(after, Instant.now(), *signals)
+
+    /** Signal identities observed by this store so far. */
+    fun signalIds(): Set<SignalId>
+
+    /** Latest sample for [signal] whose timestamp is not after [at], or null when none exists. */
+    fun latestAtOrBefore(
+        signal: SignalId,
+        at: Instant,
+    ): Sample<*>?
 }
