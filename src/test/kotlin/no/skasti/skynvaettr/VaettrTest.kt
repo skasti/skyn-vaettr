@@ -3,6 +3,7 @@ package no.skasti.skynvaettr
 import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertSame
 import no.skasti.skynvaettr.runtime.ProcessingGraph
 import no.skasti.skynvaettr.signals.InMemorySampleStore
 import no.skasti.skynvaettr.signals.Sample
@@ -42,9 +43,10 @@ class VaettrTest {
         val order = mutableListOf<String>()
         val sample = Sample(Signal<Double>("sensor.indoor.temperature"), 21.5, Instant.EPOCH)
         val graph = ProcessingGraph { order += "graph" }
-        val trainer = Trainer { received ->
+        val trainer = Trainer { received, completedGraph ->
             val expected: List<Sample<*>> = listOf(sample)
             assertEquals(expected, received)
+            assertSame(graph, completedGraph)
             order += "trainer"
         }
         val vaettr = Vaettr(
@@ -62,7 +64,7 @@ class VaettrTest {
         val store = InMemorySampleStore()
         val sample = Sample(Signal<Double>("sensor.indoor.temperature"), 21.5, Instant.EPOCH)
         var trainerSawStoredSample = false
-        val trainer = Trainer {
+        val trainer = Trainer { _, _ ->
             trainerSawStoredSample = store.latestAtOrBefore(sample.signal.id, sample.timestamp) == sample
         }
         val vaettr = Vaettr(
