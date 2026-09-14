@@ -77,7 +77,7 @@ class ExpectationTrainer<I, T>(
                     "Active expectation must retain the input that formed it"
                 }
                 val replayCandidates = resolvedExperiences.toList()
-                val experience = ExpectationExperience(
+                val experience: ExpectationExperience<I, T> = ExpectationExperience(
                     episode = EpisodeDefinition(
                         from = subtractContext(resolved.formedAt),
                         to = inclusiveEnd(assessment.result.timestamp),
@@ -89,8 +89,8 @@ class ExpectationTrainer<I, T>(
                     priority = assessment.priority,
                 )
 
-                resolvedExpectations += resolved
-                resolvedExperiences += experience
+                resolvedExpectations.add(resolved)
+                resolvedExperiences.add(experience)
 
                 model.train(formationInput, assessment.observedValue)
                 replaySelector.select(replayCandidates)?.let { replay ->
