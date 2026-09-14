@@ -4,6 +4,7 @@ import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertNull
 import no.skasti.skynvaettr.signals.Signal
 
 class ExpectationTypesTest {
@@ -39,6 +40,7 @@ class ExpectationTypesTest {
         assertEquals(21.2, expectation.value)
         assertEquals(t0, expectation.formedAt)
         assertEquals(0.8, expectation.confidence)
+        assertNull(expectation.result)
     }
 
     @Test
@@ -71,5 +73,44 @@ class ExpectationTypesTest {
         assertEquals(21.2, refined.value)
         assertEquals(0.8, refined.confidence)
         assertEquals(t0, refined.formedAt)
+        assertNull(refined.result)
+    }
+
+    @Test
+    fun `result closes expectation at its timestamp`() {
+        val resultAt = t0.plusSeconds(600)
+        val result = ExpectationResult("Abandoned", resultAt)
+        val expectation = Expectation(
+            signal = signal,
+            signalInitialValue = 20.0,
+            value = 21.0,
+            formedAt = t0,
+            confidence = 0.6,
+            result = result,
+        )
+
+        assertEquals("Abandoned", expectation.result?.value)
+        assertEquals(resultAt, expectation.result?.timestamp)
+    }
+
+    @Test
+    fun `result cannot predate expectation formation`() {
+        assertFailsWith<IllegalArgumentException> {
+            Expectation(
+                signal = signal,
+                signalInitialValue = 20.0,
+                value = 21.0,
+                formedAt = t0,
+                confidence = 0.6,
+                result = ExpectationResult("Abandoned", t0.minusSeconds(1)),
+            )
+        }
+    }
+
+    @Test
+    fun `result value must not be blank`() {
+        assertFailsWith<IllegalArgumentException> {
+            ExpectationResult("   ", t0)
+        }
     }
 }
