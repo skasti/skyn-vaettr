@@ -3,6 +3,8 @@ package no.skasti.skynvaettr.runtime
 import java.time.Duration
 import java.time.Instant
 import kotlin.math.abs
+import no.skasti.skynvaettr.models.Model
+import no.skasti.skynvaettr.models.PredictionDecoder
 import no.skasti.skynvaettr.representation.Embedding
 import no.skasti.skynvaettr.representation.Embedder
 import no.skasti.skynvaettr.representation.Representation
@@ -19,17 +21,22 @@ import no.skasti.skynvaettr.signals.SignalId
  * than treating a sample as a state that remains valid until the next update.
  *
  * Each selected observation is represented from signal identity + scalar value + relative time.
- * The graph deliberately stops before learned projection and attention. The successful playpen
- * attention experiments normalized values and learned the input/key/value projections and latent
- * query from a prediction objective.
+ * Compatible [Model] components then consume that [Representation] and emit another representation;
+ * compatible [PredictionDecoder] components translate model output into runtime predictions.
  */
 class SensingProcessingGraph(
     private val sampleStore: SampleStore,
     private val signalEmbedder: Embedder<SignalId> = SignalIdentityEmbedder(),
     private val historyAges: List<Duration> = DEFAULT_HISTORY_AGES,
+    models: List<Model> = emptyList(),
+    private val predictionDecoders: List<PredictionDecoder<*>> = emptyList(),
 ) : ProcessingGraph {
+    private val modelComponents = models.toList()
+
     var latestRepresentation: Representation? = null
         private set
+
+    private var latestExecutions: List<PredictionExecution> = emptyList()
 
     init {
         require(historyAges.isNotEmpty()) { "history ages must not be empty" }
@@ -44,10 +51,38 @@ class SensingProcessingGraph(
         val now = samples.maxOf { it.timestamp }
         val history = sampleStore.get(now.minus(maxHistoryAge), now.plusNanos(1))
         val observations = selectObservations(now, history)
-        if (observations.isEmpty()) return
+        if (observations.isEmpty()) {
+            latestExecutions = emptyList()
+            return
+        }
 
-        latestRepresentation = Representation.from(observations.map(::encode))
+        val representation = Representation.from(observations.map(::encode))
+        latestRepresentation = representation
+        latestExecutions = buildList {
+            modelComponents
+                .filter { it.supports(representation) }
+                .forEach { model ->
+                    val output = model.forward(representation)
+                    predictionDecoders
+                        .filter { it.supports(output) }
+                        .forEach { decoder ->
+                            add(
+                                PredictionExecution(
+                                    model = model,
+                                    decoder = decoder,
+                                    input = representation,
+                                    output = output,
+                                    prediction = decoder.decode(output),
+                                ),
+                            )
+                        }
+                }
+        }
     }
+
+    override fun models(): List<Model> = modelComponents.toList()
+
+    override fun predictionExecutions(): List<PredictionExecution> = latestExecutions.toList()
 
     private fun selectObservations(
         now: Instant,
