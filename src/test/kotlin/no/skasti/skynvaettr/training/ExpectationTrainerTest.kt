@@ -35,6 +35,7 @@ class ExpectationTrainerTest {
 
             override fun open(
                 prediction: Prediction<Int>,
+                previous: Sample<Int>?,
                 current: Sample<Int>,
             ): Expectation<Int> =
                 Expectation(
