@@ -1,195 +1,145 @@
 # Predictions and Expectations
 
-This document defines the current prediction/expectation boundary in Skynvættr core.
+This document defines the current prediction/expectation boundary in Skynvættr core and the active learning experiment.
 
-## Model output and decoding
+## Current experiment: learn predictions before expectations
 
-Models do not directly produce domain objects such as `Prediction<T>`.
+The thermal and kitchen examples currently stop at `Prediction`. They intentionally do **not** create `Expectation` instances while we validate whether a learned attention model can discover useful temporal relationships and predict the next meaningful transition.
 
-A graph model consumes and produces the generic latent `Representation` type:
+Expectation types, policies, results and replay infrastructure remain in core for later use; they are not removed by this experiment.
 
 ```mermaid
 flowchart LR
-    S[Samples] --> G[Processing graph]
-    G --> R[Representation]
-    R --> M[Model]
-    M --> O[Representation]
-    O --> D[PredictionDecoder]
+    S[Samples / history] --> R[Representation]
+    R --> A[Learned Q/K/V attention model]
+    A --> O[Latent transition representation]
+    O --> D[TransitionPredictionDecoder]
     D --> P[Prediction]
+    P -. later .-> E[ExpectationPolicy]
+    E -. later .-> X[Expectation]
 ```
 
-This keeps learned model components independent of concrete signal semantics. `PredictionDecoder<T>` interprets compatible model output as a prediction for one `Signal<T>` and maps observed training targets back into the model output space.
+## Representation and signal identity
 
-## Prediction
+Each sensory position is encoded from signal identity, scalar value and actual relative time. `Representation` itself remains a generic sequence of embeddings and does not carry symbolic `SignalId` fields.
 
-`Prediction<T>` is a decoded value for one `Signal<T>` together with confidence in `0.0..1.0`.
+The signal identity embedding is nevertheless part of the numeric representation seen by the model. This allows learned model output to contain a latent signal identity that can later be decoded back to a known signal.
 
-Predictions deliberately have no mandatory target timestamp or fixed forecast horizon. Confidence describes support for the prediction; it does not mean that the runtime has committed to believing it.
-
-## Dynamic prediction target discovery
-
-`PredictionRouteFactory` is the current discovery boundary. When the sensing graph observes a signal for the first time, compatible factories may create a graph-owned `PredictionRoute` consisting of a model and decoder for that target signal.
-
-The current default experiment uses `DoublePredictionRouteFactory`, which creates one independent numeric predictor route for each observed `Double` signal.
+Diagnostic metadata (`SensoryPosition`) is kept alongside the representation only so reports can label attention weights with the original signal and timestamp. Prediction decoding does not use that metadata to choose a target signal.
 
 ```mermaid
 flowchart LR
-    S[Observed signals] --> F[PredictionRouteFactory]
-    F --> A[Model + decoder for signal A]
-    F --> B[Model + decoder for signal B]
-    F --> C[Model + decoder for signal C]
+    I[SignalId + value + timestamp] --> E[Encoded sensory embedding]
+    E --> R[Representation]
+    R --> M[Learned model]
+    M --> O[Latent output]
+    O --> D[Decoder]
+    D --> P[Prediction signal + value + confidence]
 
-    R[Complete sensory Representation] --> A
-    R --> B
-    R --> C
+    I -. diagnostics only .-> H[Attention report labels]
 ```
 
-Each target has separate model state/output semantics while every predictor receives the same complete sensory representation, so cross-signal relationships remain learnable.
+## Horizon-free next-transition prediction
 
-## Adaptive multi-objective self-supervision
+`Prediction<T>` deliberately has no mandatory target timestamp or configured `+N` horizon.
 
-Model learning does not depend on an expectation first being formed, and no single self-supervised objective owns a signal permanently.
+The active self-supervised objective is event-conditioned: after a meaningful transition, the model predicts the next meaningful numeric transition. When that later transition is actually observed, its signal identity and value become the training target for the earlier model input.
 
-The current numeric baseline runs two objectives in parallel:
+```mermaid
+sequenceDiagram
+    participant S as source signal
+    participant M as attention model
+    participant P as pending prediction
+    participant T as later target signal
 
-- `ObservationTrainer` learns from ordinary continuous change between observations. Exact plateaus are skipped because persistence already predicts them perfectly and they otherwise overwhelm sparse dynamics.
-- `TransitionTrainer` detects meaningful accumulated numeric transitions. A transition on any signal captures the current graph context; when a target signal later transitions, that earlier context is trained toward the new target value. This allows experiences such as `dimmer change -> later light change` without configuring either signal as a cause or target.
+    S->>S: meaningful transition
+    S->>M: current sensory Representation
+    M->>P: Prediction(signal, value, confidence)
+    T->>T: later meaningful transition
+    T->>P: observed target signal + value
+    P->>M: train previous input toward observed transition
+```
+
+This differs from the earlier next-sense-cycle objective, which accidentally behaved like a hidden polling-interval horizon and overrepresented plateaus.
+
+## Meaningful transitions
+
+`NumericTransitionDetector` is the current generic baseline. It measures accumulated movement from the last accepted transition anchor rather than requiring one large sample-to-sample jump.
+
+A discrete dimmer change may therefore transition immediately, while many small thermal movements can accumulate into a transition.
 
 ```mermaid
 flowchart LR
-    S[Samples / history] --> G[Processing graph]
-    G --> R[Representation]
-    R --> M[Trainable model]
-    M --> P[Prediction]
-
-    G --> C[Continuous objective]
-    G --> T[Transition objective]
-    S --> C
-    S --> T
-
-    C --> W[Adaptive objective weights]
-    T --> W
-    W --> M
-```
-
-`AdaptiveObjectiveWeights` evaluates each objective relative to a no-change persistence baseline. Long plateaus therefore do not make an objective look useful merely because predicting no change is easy. When a meaningful target change occurs, an objective receives positive skill only if its prediction improves on persistence.
-
-Weights remain soft and bounded away from zero. This is deliberate: the system does not perform a permanent hand-off from one learning regime to another. A signal may be mostly continuous in one context and transition-dominated in another, and both objectives can remain useful.
-
-The current weighting state is tracked per signal. Context-local routing and learned objective selection are possible future refinements once experiments justify the added complexity.
-
-## Transition detection
-
-`NumericTransitionDetector` measures movement from the last accepted transition anchor rather than only the immediately preceding sample.
-
-This means a discrete signal such as a dimmer may transition immediately from `0.2 -> 0.8`, while a thermal signal can accumulate many small changes until they together cross the same relative threshold.
-
-```mermaid
-flowchart LR
-    A[Anchor value] --> B[small change]
-    B --> C[small change]
-    C --> D{accumulated change meaningful?}
+    A[Anchor] --> B[small movement]
+    B --> C[small movement]
+    C --> D{meaningful accumulated change?}
     D -->|no| B
-    D -->|yes| E[Transition event / new anchor]
+    D -->|yes| E[Transition / new anchor]
 ```
 
-The detector is a generic numeric baseline, not a claim that a fixed range fraction is the final notion of salience. Learned noise/change models may replace it later.
+The current range-fraction threshold is an experimental baseline, not intended as the final salience mechanism.
 
-## Why this is not a fixed next-step horizon
+## Learned attention baseline
 
-The earlier `ObservationTrainer` version trained every execution against the value seen in the next sense cycle. In a five-minute simulation this accidentally behaved like a hidden `+5 minute` target and heavily overrepresented unchanged plateaus.
+`LearnedAttentionTransitionModel` is intentionally smaller than a Transformer. It uses:
 
-The continuous objective now ignores exact plateaus, while the transition objective waits for an actual meaningful state change. Transition learning is therefore event-conditioned rather than tied to the runtime polling interval.
-
-The current per-signal scalar model still predicts values rather than a full general transition event. A future transition head may additionally predict which signal transitions next and an elapsed-time distribution.
-
-## Expectation policy
-
-A decoded prediction may be considered by an `ExpectationPolicy<T>`. The policy owns decisions such as:
-
-- whether it supports the decoded prediction type;
-- how much confidence is needed before committing;
-- whether a prediction should create an expectation at all;
-- whether later evidence fulfills or violates an expectation;
-- whether later compatible predictions should refine an existing expectation;
-- what replay priority or surprise should be associated with the result.
-
-`NumericExpectationPolicy` maintains observed range state per signal rather than globally, so unrelated numeric scales do not affect one another's thresholds.
-
-Low-confidence local movement no longer creates exploratory bootstrap expectations. With stability expectations disabled, an expectation is created only when the model produces a sufficiently confident, materially different prediction.
-
-## Expectation
-
-`Expectation<T>` represents a persistent belief after policy has decided a prediction is worth committing to.
-
-It records the signal, `signalInitialValue`, stable `expectationInitialValue`, current expected `value`, `formedAt`, confidence, and an optional `ExpectationResult` once the expectation is closed.
-
-```mermaid
-stateDiagram-v2
-    [*] --> Active: expectation formed
-    Active --> Active: compatible refinement
-    Active --> Result: policy resolves belief
-    Result --> [*]
-```
-
-## Expectations as additional learning signal
-
-Expectations are not a prerequisite for training, but resolved expectations remain useful experiences.
-
-`ExpectationTrainer<T>` discovers the exact graph-owned model execution that produced a committed prediction. When the expectation resolves, it records an `ExpectationExperience<T>` and may reinforce/replay that experience with priority based on fulfillment, violation, surprise, or another policy-defined measure.
+- a learned global query representing “what meaningful transition happens next?”;
+- learned key projections for every sensory position;
+- learned value projections for every sensory position;
+- scaled dot-product attention;
+- a learned output head for latent signal identity and numeric value.
 
 ```mermaid
 flowchart LR
-    O[Observations] --> C[Continuous objective]
-    O --> T[Transition objective]
-    C --> M[World model]
-    T --> M
-    M --> P[Predictions]
-    P --> E[Expectation policy]
-    E --> X[Expectation]
-    X --> R[Resolution / surprise]
-    R --> ER[Expectation replay]
-    ER --> M
+    R[History Representation] --> K[Learned K projection]
+    R --> V[Learned V projection]
+    Q[Learned next-transition query] --> A[Scaled dot-product attention]
+    K --> A
+    V --> A
+    A --> C[Context]
+    C --> S[Latent signal identity]
+    C --> N[Numeric value]
 ```
 
-This separates two concerns:
+This is an inspectable Q/K/V baseline rather than the final model architecture. A later model may use context-dependent queries, multiple heads, shared backbones or longer-lived memory.
 
-- ordinary observations and transitions teach the model how the world behaves;
-- expectations record what the entity believed and provide an additional significance/surprise signal when those beliefs resolve.
+## Decoding target signal identity
 
-## Current numeric baseline
+`TransitionPredictionDecoder` observes which numeric signals currently exist, but does not decide the target signal from input metadata.
 
-`OnlineKnnModel` is a dependency-free baseline `TrainableModel`. It compares complete ordered representation sequences instead of mean-pooling them, preserving signal/value/time bindings and observation order during nearest-neighbour lookup.
+The model output contains a latent signal-identity vector. The decoder matches that vector against embeddings of known signals and returns the nearest signal together with decoded value and confidence.
 
-Training examples retain real fractional weights. Objective weighting therefore changes neighbour contribution directly rather than being approximated by duplicated examples.
+That means the learner must actually discover that a context such as a dimmer transition should map to `state.kitchen.light`; the decoder cannot obtain that answer from report metadata.
 
-This remains a baseline, not the intended final sequence architecture. Core already contains a `ScaledDotProductAttention` primitive, while learned Q/K/V projections and richer trainable attention models remain follow-up work. The multi-objective training boundary is intended to provide useful supervision for such a shared representation/attention backbone later.
+## Inspectability
 
-`NumericPredictionDecoder` assigns model output to a concrete numeric signal. The thermal and kitchen examples configure only the generic `DoublePredictionRouteFactory`; neither scenario declares its signals as prediction targets.
+The examples report days 1, 3, 5 and 10 so learning can be inspected over time.
 
-## Current boundary
+Two diagnostics are produced per snapshot:
 
-The promoted flow is:
+1. **Attention heatmap** — average attention mass grouped by source signal and observation age.
+2. **Target-signal matrix** — normalized actual-vs-predicted next-transition signal identity.
+
+Age buckets in the heatmap are reporting-only. The model receives actual relative times within the existing sensing-history window.
+
+Attention is not treated as proof of causality. It tells us what the model weighted while making a prediction; prediction accuracy and later ablation experiments provide stronger evidence that a relationship is actually being used.
+
+## Expectations remain a separate layer
+
+`Expectation<T>`, `ExpectationResult`, `ExpectationPolicy<T>`, `NumericExpectationPolicy`, `ExpectationTrainer` and replay infrastructure remain available in core.
+
+They represent a different concern: deciding when a model-produced prediction is important and reliable enough for the running Skynvættr to retain as a persistent belief.
+
+The intended later layering remains:
 
 ```mermaid
 flowchart LR
-    S[Samples] --> R1[Graph Representation]
-    R1 --> M[Discovered target model]
-    M --> R2[Latent Representation]
-    R2 --> D[Decoder]
-    D --> P[Prediction]
-    P --> EP[ExpectationPolicy]
-    EP --> E[Expectation]
-
-    S --> C[ObservationTrainer]
-    S --> T[TransitionTrainer]
-    C --> W[AdaptiveObjectiveWeights]
-    T --> W
-    W --> M
-
-    E --> X[Resolved Experience]
-    X --> ET[ExpectationTrainer / replay]
-    ET --> M
+    M[World model] --> P[Predictions]
+    P --> G[ExpectationPolicy]
+    G --> E[Expectation]
+    E --> R[Resolution / surprise]
+    R --> L[Optional replay / significance learning]
+    L --> M
 ```
 
-Automatic target discovery and the current adaptive objectives currently cover `Double` signals. General graph ports, scheduling, shared-backbone/multi-head learning, learned attention/QKV, non-Double decoder factories, context-local objective routing, general next-transition heads and richer expectation refinement remain experiment-driven follow-up work.
+We are intentionally postponing that layer until the prediction/QKV path is sufficiently understood.
