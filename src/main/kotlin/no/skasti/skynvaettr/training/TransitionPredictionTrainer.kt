@@ -24,11 +24,10 @@ data class TransitionPredictionRecord(
         get() = prediction.signal.id == actualSignal
 }
 
-/** One cell from the self-attention matrix, labeled with symbolic metadata for diagnostics only. */
+/** One candidate-query -> sensory-key attention cell, labeled only for diagnostics. */
 data class AttentionAttribution(
     val queryIndex: Int,
     val querySignalId: SignalId,
-    val queryAge: Duration,
     val keyIndex: Int,
     val keySignalId: SignalId,
     val keyAge: Duration,
@@ -81,21 +80,20 @@ class TransitionPredictionTrainer : Trainer {
     private fun attentionAttribution(execution: TransitionPredictionExecution): List<AttentionAttribution> {
         val formedAt = execution.sourceTransition.current.timestamp
         val positions = execution.historyPositions
-        require(execution.attentionWeights.size == positions.size) {
-            "Expected one attention row per sensory position"
+        require(execution.attentionWeights.size == execution.candidateSignals.size) {
+            "Expected one attention row per candidate signal"
         }
 
         return buildList {
             execution.attentionWeights.forEachIndexed { queryIndex, row ->
-                require(row.size == positions.size) { "Expected one attention weight per key position" }
-                val queryPosition = positions[queryIndex]
+                require(row.size == positions.size) { "Expected one attention weight per sensory-history position" }
+                val querySignal = execution.candidateSignals[queryIndex]
                 row.forEachIndexed { keyIndex, weight ->
                     val keyPosition = positions[keyIndex]
                     add(
                         AttentionAttribution(
                             queryIndex = queryIndex,
-                            querySignalId = queryPosition.signalId,
-                            queryAge = Duration.between(queryPosition.timestamp, formedAt).coerceAtLeast(Duration.ZERO),
+                            querySignalId = querySignal,
                             keyIndex = keyIndex,
                             keySignalId = keyPosition.signalId,
                             keyAge = Duration.between(keyPosition.timestamp, formedAt).coerceAtLeast(Duration.ZERO),
