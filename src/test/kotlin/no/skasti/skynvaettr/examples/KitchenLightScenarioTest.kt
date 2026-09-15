@@ -8,7 +8,7 @@ import kotlin.test.assertTrue
 
 class KitchenLightScenarioTest {
     @Test
-    fun `dimmer leads light and generic learning discovers both signals`() {
+    fun `dimmer leads light and transition prediction learns from both signals`() {
         val learning = KitchenLightLearning()
         val world = learning.world
 
@@ -22,12 +22,11 @@ class KitchenLightScenarioTest {
             learning.sampleStore.signalIds(),
         )
         assertEquals(
-            setOf(world.dimmer, world.light),
-            learning.graph.predictionExecutions().map { it.prediction.signal }.toSet(),
+            setOf(world.dimmer.id, world.light.id),
+            learning.decoder.knownSignals().map { it.id }.toSet(),
         )
-        assertEquals(2, learning.graph.models().size)
-        assertTrue(learning.trainer.expectations.isNotEmpty())
-        assertTrue(learning.trainer.experiences.isNotEmpty())
+        assertTrue(learning.predictionTrainer.records.isNotEmpty())
+        assertTrue(learning.model.trainingExampleCount > 0)
 
         val all = learning.sampleStore.get(Instant.EPOCH, Instant.EPOCH.plus(Duration.ofDays(4)).plusNanos(1))
         val dimmer = all.filter { it.signal == world.dimmer }.associate { it.timestamp to (it.value as Double) }
