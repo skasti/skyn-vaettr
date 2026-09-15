@@ -17,6 +17,9 @@ import no.skasti.skynvaettr.signals.SignalId
  * value. This allows relationships such as dimmer-change -> later light-change to become training
  * experiences without configuring either signal as a cause or target.
  *
+ * Training weights are determined from objective skill accumulated before the current outcome. The
+ * outcome is recorded only after the update, preventing the target from influencing its own weight.
+ *
  * This is an incremental bridge for the current per-signal scalar prediction heads. A future general
  * transition head may additionally predict which signal transitions next and the elapsed-time
  * distribution.
@@ -68,6 +71,13 @@ class TransitionTrainer(
             pending.toMap().forEach { (key, previous) ->
                 if (key.signalId != signalId) return@forEach
 
+                val weight = objectiveWeights.weight(signalId, LearningObjective.Transition)
+                previous.model.train(
+                    previous.input,
+                    previous.decoder.trainingTarget(transition.current.value),
+                    weight = weight,
+                )
+                trainingExampleCount++
                 objectiveWeights.record(
                     signalId = signalId,
                     objective = LearningObjective.Transition,
@@ -75,12 +85,6 @@ class TransitionTrainer(
                     baseline = previous.baseline,
                     observed = transition.current.value,
                 )
-                previous.model.train(
-                    previous.input,
-                    previous.decoder.trainingTarget(transition.current.value),
-                    weight = objectiveWeights.weight(signalId, LearningObjective.Transition),
-                )
-                trainingExampleCount++
                 pending.remove(key)
             }
         }
