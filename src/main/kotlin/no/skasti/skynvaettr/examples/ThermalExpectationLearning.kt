@@ -7,6 +7,7 @@ import no.skasti.skynvaettr.runtime.SensingProcessingGraph
 import no.skasti.skynvaettr.signals.InMemorySampleStore
 import no.skasti.skynvaettr.training.ExpectationExperience
 import no.skasti.skynvaettr.training.ExpectationTrainer
+import no.skasti.skynvaettr.training.ObservationTrainer
 import no.skasti.skynvaettr.training.WeightedPriorityReplaySelector
 
 /**
@@ -14,7 +15,8 @@ import no.skasti.skynvaettr.training.WeightedPriorityReplaySelector
  *
  * Samples enter the same generic sensing graph used by the runtime. The graph builds a
  * [no.skasti.skynvaettr.representation.Representation] and discovers prediction routes from the
- * observed signal types. No thermal signal is configured as a prediction target.
+ * observed signal types. Models learn continuously from ordinary observed transitions; expectations
+ * are formed only from sufficiently confident predictions and provide additional replay/surprise.
  */
 class ThermalExpectationLearning(
     val world: ThermalExpectationScenario = ThermalExpectationScenario(),
@@ -24,6 +26,7 @@ class ThermalExpectationLearning(
         sampleStore = sampleStore,
         predictionRouteFactories = listOf(DoublePredictionRouteFactory()),
     )
+    val observationTrainer = ObservationTrainer()
     val trainer = ExpectationTrainer(
         sampleStore = sampleStore,
         policy = NumericExpectationPolicy(
@@ -37,6 +40,6 @@ class ThermalExpectationLearning(
     val vaettr = Vaettr(
         sampleStore = sampleStore,
         graph = graph,
-        trainers = listOf(trainer),
+        trainers = listOf(observationTrainer, trainer),
     )
 }
