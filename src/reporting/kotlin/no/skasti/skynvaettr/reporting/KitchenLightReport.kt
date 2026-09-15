@@ -4,8 +4,11 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Duration
 import java.time.Instant
+import java.util.Locale
 import no.skasti.skynvaettr.examples.KitchenLightLearning
 import no.skasti.skynvaettr.expectations.Expectation
+import no.skasti.skynvaettr.signals.SignalId
+import no.skasti.skynvaettr.training.LearningObjective
 
 /** Renders the dimmer/light temporal-relation example. */
 object KitchenLightReport {
@@ -96,6 +99,10 @@ object KitchenLightReport {
                 "$signalFulfilled fulfilled / $signalViolated violated"
             }
         val routes = learning.graph.predictionExecutions().map { it.prediction.signal.id.value }.distinct().sorted()
+        val objectiveSummary = listOf(world.dimmer.id, world.light.id)
+            .joinToString(separator = "\n") { signalId ->
+                "- `${signalId.value}`: ${objectiveWeights(learning, signalId)}"
+            }
 
         Files.writeString(
             reportDir.resolve("summary.md"),
@@ -107,26 +114,48 @@ object KitchenLightReport {
             different, and it is forced to `0.0` between 23:00 and 06:00. The light follows the dimmer with a fixed
             **10 minute delay**. Skynvættr is not told that relationship and neither signal is configured as a target.
 
-            Models learn continuously from ordinary observed transitions via `ObservationTrainer`; expectations are not
-            used to bootstrap learning. Expectations are only formed from sufficiently confident, material model
-            predictions and their outcomes remain available as an additional replay/surprise signal.
+            Continuous and transition self-supervision run in parallel. Exact plateaus are not continuous-training
+            examples, and objective weights are adapted from predictive skill relative to a no-change persistence
+            baseline. Expectations remain a separate belief layer formed only from sufficiently confident/material
+            model predictions.
 
             Learned expectation graphs are shown for days **1, 3, 5 and 10**, using only that day's observations and
             the expectations known at the end of that day. A separate graph shows the raw world state for day 10.
 
             Automatically discovered prediction routes: **${routes.joinToString()}**.
-            Self-supervised observed transitions trained: **${learning.observationTrainer.trainingExampleCount}**.
+            Continuous training examples: **${learning.observationTrainer.trainingExampleCount}**.
+            Meaningful transitions detected: **${learning.transitionTrainer.detectedTransitionCount}**.
+            Transition training examples: **${learning.transitionTrainer.trainingExampleCount}**.
+
+            Objective state after ten days:
+            $objectiveSummary
+
             Expectations formed by signal: **${bySignal.entries.joinToString { "${it.key}: ${it.value}" }}**.
             Resolved expectations: **$resolved** (`Fulfilled`: **$fulfilled**, `Violated`: **$violated**).
             Results by signal: **${resultsBySignal.entries.joinToString { "${it.key}: ${it.value}" }}**.
             Replayable expectation experiences: **${learning.trainer.experiences.size}**.
 
-            This lets us inspect whether the generic learner increasingly exploits the fact that dimmer leads light,
-            rather than merely memorizing a repeated daily schedule. The daily dimmer schedule is intentionally not
-            identical across days apart from the overnight off period.
+            This lets us inspect both whether the learner increasingly exploits the fact that dimmer leads light and
+            which self-supervised objective earns more influence for each signal. The daily dimmer schedule remains
+            intentionally different across days apart from the overnight off period.
             """.trimIndent() + "\n",
         )
     }
+
+    private fun objectiveWeights(
+        learning: KitchenLightLearning,
+        signalId: SignalId,
+    ): String {
+        val continuousWeight = learning.objectiveWeights.weight(signalId, LearningObjective.Continuous)
+        val transitionWeight = learning.objectiveWeights.weight(signalId, LearningObjective.Transition)
+        val continuousSkill = learning.objectiveWeights.skill(signalId, LearningObjective.Continuous)
+        val transitionSkill = learning.objectiveWeights.skill(signalId, LearningObjective.Transition)
+        return "continuous=${format(continuousWeight)} (skill=${format(continuousSkill)}), " +
+            "transition=${format(transitionWeight)} (skill=${format(transitionSkill)})"
+    }
+
+    private fun format(value: Double?): String =
+        value?.let { String.format(Locale.ROOT, "%.3f", it) } ?: "n/a"
 
     private fun expectationOverlays(
         expectations: List<Expectation<Double>>,
