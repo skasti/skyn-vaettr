@@ -73,10 +73,10 @@ jobs:
           test -f "$thermal_summary"
           test -f "$thermal_dir/day.png"
           test -f "$kitchen_summary"
-          test -f "$kitchen_dir/world.png"
-          test -f "$kitchen_dir/expectations.png"
+          test -f "$kitchen_dir/day.png"
           for day in "${report_days[@]}"; do
             test -f "$thermal_dir/expectations-day-$day.png"
+            test -f "$kitchen_dir/expectations-day-$day.png"
           done
 
           if ! gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$RESULTS_BRANCH" >/dev/null 2>&1; then
@@ -114,11 +114,11 @@ jobs:
           }
 
           publish_graph "$thermal_dir/day.png" "pr-$PR_NUMBER/examples/thermal-expectation/day.png" "thermal day 10 graph"
+          publish_graph "$kitchen_dir/day.png" "pr-$PR_NUMBER/examples/kitchen-light/day.png" "kitchen day 10 graph"
           for day in "${report_days[@]}"; do
             publish_graph "$thermal_dir/expectations-day-$day.png" "pr-$PR_NUMBER/examples/thermal-expectation/expectations-day-$day.png" "thermal expectation day $day graph"
+            publish_graph "$kitchen_dir/expectations-day-$day.png" "pr-$PR_NUMBER/examples/kitchen-light/expectations-day-$day.png" "kitchen expectation day $day graph"
           done
-          publish_graph "$kitchen_dir/world.png" "pr-$PR_NUMBER/examples/kitchen-light/world.png" "kitchen world graph"
-          publish_graph "$kitchen_dir/expectations.png" "pr-$PR_NUMBER/examples/kitchen-light/expectations.png" "kitchen expectation graph"
 
           raw_base="https://raw.githubusercontent.com/$GITHUB_REPOSITORY/$RESULTS_BRANCH/pr-$PR_NUMBER/examples"
           comment_file=$(mktemp)
@@ -131,8 +131,10 @@ jobs:
             done
             printf '\n---\n\n'
             cat "$kitchen_summary"
-            printf '\n### Kitchen world\n\n![Kitchen dimmer and light](%s/kitchen-light/world.png?run=%s)\n' "$raw_base" "$GITHUB_RUN_ID"
-            printf '\n### Kitchen expectations\n\n![Kitchen expectations](%s/kitchen-light/expectations.png?run=%s)\n' "$raw_base" "$GITHUB_RUN_ID"
+            printf '\n### Kitchen day 10 observations\n\n![Kitchen dimmer and light](%s/kitchen-light/day.png?run=%s)\n' "$raw_base" "$GITHUB_RUN_ID"
+            for day in "${report_days[@]}"; do
+              printf '\n### Kitchen learned expectations — day %s\n\n![Kitchen learned expectation series day %s](%s/kitchen-light/expectations-day-%s.png?run=%s)\n' "$day" "$day" "$raw_base" "$day" "$GITHUB_RUN_ID"
+            done
           } > "$comment_file"
 
           gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
