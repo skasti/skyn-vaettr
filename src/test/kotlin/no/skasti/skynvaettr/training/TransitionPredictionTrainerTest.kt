@@ -3,18 +3,19 @@ package no.skasti.skynvaettr.training
 import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
 import no.skasti.skynvaettr.Vaettr
 import no.skasti.skynvaettr.models.LearnedAttentionTransitionModel
 import no.skasti.skynvaettr.models.TransitionPredictionDecoder
 import no.skasti.skynvaettr.representation.SignalIdentityEmbedder
-import no.skasti.skynvaettr.runtime.SensingProcessingGraph
+import no.skasti.skynvaettr.runtime.TransitionPredictionProcessingGraph
 import no.skasti.skynvaettr.signals.InMemorySampleStore
 import no.skasti.skynvaettr.signals.Sample
 import no.skasti.skynvaettr.signals.Signal
 
 class TransitionPredictionTrainerTest {
     @Test
-    fun `source transition forms prediction that resolves on later target transition`() {
+    fun `graph produces source prediction and trainer supervises it on later transition`() {
         val dimmer = Signal<Double>("state.kitchen.dimmer")
         val light = Signal<Double>("state.kitchen.light")
         val sampleStore = InMemorySampleStore()
@@ -24,11 +25,12 @@ class TransitionPredictionTrainerTest {
             signalEmbeddingDimensions = embedder.dimensions,
             seed = 1,
         )
-        val graph = SensingProcessingGraph(
+        val graph = TransitionPredictionProcessingGraph(
             sampleStore = sampleStore,
-            models = listOf(model),
+            model = model,
+            decoder = decoder,
         )
-        val trainer = TransitionPredictionTrainer(decoder)
+        val trainer = TransitionPredictionTrainer()
         val vaettr = Vaettr(sampleStore, graph, listOf(trainer))
 
         vaettr.sense(
@@ -44,6 +46,9 @@ class TransitionPredictionTrainerTest {
             ),
         )
 
+        val execution = assertNotNull(graph.latestTransitionPredictionExecution())
+        assertEquals(dimmer.id, execution.sourceTransition.current.signal.id)
+        assertEquals(model, execution.model)
         assertEquals(0, trainer.records.size)
         assertEquals(0L, model.trainingExampleCount)
 
