@@ -7,7 +7,7 @@ import java.time.Instant
 import java.util.Locale
 import no.skasti.skynvaettr.examples.ThermalExpectationLearning
 
-/** Renders prediction and self-attention diagnostics for the minimal thermal example. */
+/** Renders prediction and candidate-attention diagnostics for the minimal thermal example. */
 object ThermalExpectationReport {
     private val reportDays = listOf(1L, 3L, 5L, 10L)
 
@@ -46,7 +46,7 @@ object ThermalExpectationReport {
         val dayMetrics = reportDays.associateWith { day ->
             val dayRecords = TransitionPredictionReportSupport.recordsForDay(records, day)
             TransitionPredictionReportSupport.renderAttentionHeatmap(
-                title = "Thermal self-attention relationships — day $day",
+                title = "Thermal candidate attention relationships — day $day",
                 records = dayRecords,
                 signals = signals,
                 output = reportDir.resolve("attention-day-$day.png"),
@@ -73,14 +73,13 @@ object ThermalExpectationReport {
             Outdoor temperature follows a daily sine wave and indoor temperature follows it gradually with thermal inertia.
             No relationship between the two signals is configured in the learner.
 
-            The example intentionally does **not** create Expectations. The same shared learnable self-attention Q/K/V
-            model used by the kitchen example contextualizes every sensory position against all other positions before
-            predicting the next meaningful numeric transition. Target signal identity and value are learned outputs and
-            are supervised only when the next transition is observed.
+            The example intentionally does **not** create Expectations. As in the kitchen example, every observed numeric
+            signal is scored as a dynamic next-transition candidate with shared Q/K/V projections and shared score/value
+            heads. Signal identity is trained with cross-entropy; value loss is applied to the observed target candidate.
 
             Snapshots for days **1, 3, 5 and 10** show:
 
-            - average self-attention by **query signal → attended signal**;
+            - average candidate attention by **candidate/query signal → attended history signal**;
             - normalized actual-vs-predicted next-transition signal matrices.
 
             | Day | Resolved predictions | Target-signal accuracy | Value MAE |
