@@ -101,7 +101,7 @@ stateDiagram-v2
 
 Expectations are no longer a prerequisite for training, but resolved expectations remain useful experiences.
 
-`ExpectationTrainer<T>` discovers the exact graph-owned model execution that produced a committed prediction. When the expectation resolves, it records an `ExpectationExperience<T>` and may train/replay that experience with priority based on fulfillment, violation, surprise, or another policy-defined measure.
+`ExpectationTrainer<T>` discovers the exact graph-owned model execution that produced a committed prediction. When the expectation resolves, it records an `ExpectationExperience<T>` and may reinforce/replay that experience with priority based on fulfillment, violation, surprise, or another policy-defined measure.
 
 ```mermaid
 flowchart LR
@@ -122,7 +122,7 @@ This separates two concerns:
 
 ## Current numeric baseline
 
-`OnlineKnnModel` is a dependency-free baseline `TrainableModel`. It now compares complete ordered representation sequences instead of mean-pooling them, preserving signal/value/time bindings and observation order during nearest-neighbour lookup.
+`OnlineKnnModel` is a dependency-free baseline `TrainableModel`. It compares complete ordered representation sequences instead of mean-pooling them, preserving signal/value/time bindings and observation order during nearest-neighbour lookup.
 
 This remains a baseline, not the intended final sequence architecture. Core already contains a `ScaledDotProductAttention` primitive, while learned Q/K/V projections and richer trainable attention models remain follow-up work.
 
