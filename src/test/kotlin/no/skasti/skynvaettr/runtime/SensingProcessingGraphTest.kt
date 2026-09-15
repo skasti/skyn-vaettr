@@ -34,14 +34,17 @@ class SensingProcessingGraphTest {
 
         val representation = assertNotNull(graph.latestRepresentation)
         assertEquals(2, representation.positions)
-        assertEquals(SignalIdentityEmbedder().dimensions + 2, representation.dimensions)
+        assertEquals(SignalIdentityEmbedder().dimensions + 3, representation.dimensions)
 
-        val valueDimension = representation.dimensions - 2
-        val timeDimension = representation.dimensions - 1
+        val valueDimension = SignalIdentityEmbedder().dimensions
+        val timeDimension = valueDimension + 1
+        val eventDimension = valueDimension + 2
         assertEquals(20.0, representation[0][valueDimension])
         assertEquals(-1.0, representation[0][timeDimension])
+        assertEquals(0.0, representation[0][eventDimension])
         assertEquals(21.0, representation[1][valueDimension])
         assertEquals(0.0, representation[1][timeDimension])
+        assertEquals(0.0, representation[1][eventDimension])
     }
 
     @Test
@@ -60,7 +63,7 @@ class SensingProcessingGraphTest {
         graph.sense(listOf(current))
 
         val representation = assertNotNull(graph.latestRepresentation)
-        val timeDimension = representation.dimensions - 1
+        val timeDimension = SignalIdentityEmbedder().dimensions + 1
         assertEquals(-0.7, representation[0][timeDimension], absoluteTolerance = 1e-12)
         assertEquals(0.0, representation[1][timeDimension])
     }
@@ -80,7 +83,7 @@ class SensingProcessingGraphTest {
         graph.sense(listOf(sample))
 
         val representation = assertNotNull(graph.latestRepresentation)
-        val valueDimension = representation.dimensions - 2
+        val valueDimension = SignalIdentityEmbedder().dimensions
         assertEquals(1.0, representation[0][valueDimension])
     }
 
