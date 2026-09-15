@@ -6,11 +6,10 @@ import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
-import no.skasti.skynvaettr.models.OnlineKnnModel
 
 class ThermalExpectationScenarioTest {
     @Test
-    fun `thermal learner discovers prediction targets and bootstraps expectations`() {
+    fun `thermal learner trains horizon-free transition predictions`() {
         val learning = ThermalExpectationLearning()
         val world = learning.world
 
@@ -34,22 +33,11 @@ class ThermalExpectationScenarioTest {
         assertTrue(outdoorValues.max() <= 25.0 + 1e-9)
         assertTrue(indoorValues.zipWithNext().all { (a, b) -> abs(b - a) < 1.0 })
 
-        // Neither temperature signal is configured as a prediction target. The graph discovers one
-        // independent model/decoder route for each observed Double-valued signal, and each model sees
-        // the same complete sensory Representation so cross-signal relationships remain learnable.
-        assertEquals(2, learning.graph.models().size)
-        assertTrue(learning.graph.models().all { it is OnlineKnnModel })
         assertEquals(
-            setOf(world.outdoorTemperature, world.indoorTemperature),
-            learning.graph.predictionExecutions().map { it.prediction.signal }.toSet(),
+            setOf(world.outdoorTemperature.id, world.indoorTemperature.id),
+            learning.decoder.knownSignals().map { it.id }.toSet(),
         )
-
-        assertTrue(learning.trainer.expectations.isNotEmpty())
-        assertTrue(learning.trainer.experiences.isNotEmpty())
-        assertTrue(
-            learning.graph.models()
-                .filterIsInstance<OnlineKnnModel>()
-                .sumOf { it.trainingExampleCount } > 0,
-        )
+        assertTrue(learning.predictionTrainer.records.isNotEmpty())
+        assertTrue(learning.model.trainingExampleCount > 0)
     }
 }
