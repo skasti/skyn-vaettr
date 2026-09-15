@@ -7,7 +7,7 @@ import java.time.Instant
 import java.util.Locale
 import no.skasti.skynvaettr.examples.ThermalExpectationLearning
 
-/** Renders prediction and attention diagnostics for the minimal thermal example. */
+/** Renders prediction and self-attention diagnostics for the minimal thermal example. */
 object ThermalExpectationReport {
     private val reportDays = listOf(1L, 3L, 5L, 10L)
 
@@ -46,7 +46,7 @@ object ThermalExpectationReport {
         val dayMetrics = reportDays.associateWith { day ->
             val dayRecords = TransitionPredictionReportSupport.recordsForDay(records, day)
             TransitionPredictionReportSupport.renderAttentionHeatmap(
-                title = "Thermal attention by signal / age — day $day",
+                title = "Thermal self-attention relationships — day $day",
                 records = dayRecords,
                 signals = signals,
                 output = reportDir.resolve("attention-day-$day.png"),
@@ -73,17 +73,15 @@ object ThermalExpectationReport {
             Outdoor temperature follows a daily sine wave and indoor temperature follows it gradually with thermal inertia.
             No relationship between the two signals is configured in the learner.
 
-            The example intentionally does **not** create Expectations. The same shared learnable single-query Q/K/V
-            attention model used by the kitchen example predicts the next meaningful numeric transition. Target signal
-            identity and value are both learned outputs and are supervised only when the next transition is observed.
+            The example intentionally does **not** create Expectations. The same shared learnable self-attention Q/K/V
+            model used by the kitchen example contextualizes every sensory position against all other positions before
+            predicting the next meaningful numeric transition. Target signal identity and value are learned outputs and
+            are supervised only when the next transition is observed.
 
             Snapshots for days **1, 3, 5 and 10** show:
 
-            - attention mass by source signal and observation age;
+            - average self-attention by **query signal → attended signal**;
             - normalized actual-vs-predicted next-transition signal matrices.
-
-            The age buckets exist only in reporting; the model receives actual relative times from the sensory
-            `Representation` within the existing history window.
 
             | Day | Resolved predictions | Target-signal accuracy | Value MAE |
             | ---: | ---: | ---: | ---: |
@@ -96,8 +94,7 @@ object ThermalExpectationReport {
             Final moving training loss: **${number(learning.model.exponentialMovingLoss ?: Double.NaN)}**.
 
             Thermal is deliberately a harder interpretation case than kitchen because both signals move continuously.
-            The report is therefore useful for checking whether attention develops a stable temporal relationship without
-            assuming that a high attention weight by itself proves causality.
+            Attention remains diagnostic evidence of learned context use rather than proof of causality.
             """.trimIndent(),
         ).joinToString("\n") + "\n"
 
