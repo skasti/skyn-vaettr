@@ -4,9 +4,12 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Duration
 import java.time.Instant
+import java.util.Locale
 import no.skasti.skynvaettr.examples.ThermalExpectationLearning
 import no.skasti.skynvaettr.expectations.Expectation
 import no.skasti.skynvaettr.models.OnlineKnnModel
+import no.skasti.skynvaettr.signals.SignalId
+import no.skasti.skynvaettr.training.LearningObjective
 
 /** Renders the inspectable report for the minimal thermal expectation example. */
 object ThermalExpectationReport {
@@ -78,6 +81,10 @@ object ThermalExpectationReport {
         val experiences = learning.trainer.experiences
         val models = learning.graph.models().filterIsInstance<OnlineKnnModel>()
         val retainedTrainingExamples = models.sumOf { it.trainingExampleCount }
+        val objectiveSummary = listOf(world.outdoorTemperature.id, world.indoorTemperature.id)
+            .joinToString(separator = "\n") { signalId ->
+                "- `${signalId.value}`: ${objectiveWeights(learning, signalId)}"
+            }
 
         Files.writeString(
             reportDir.resolve("summary.md"),
@@ -88,20 +95,22 @@ object ThermalExpectationReport {
             Neither signal is configured as a prediction target. The graph discovers one numeric prediction route per
             observed compatible signal, while each predictor consumes the same complete sensory `Representation`.
 
-            Models learn continuously from ordinary observed transitions via `ObservationTrainer`; expectations are not
-            used to bootstrap learning. With stability expectations disabled, only sufficiently confident and material
-            decoded model predictions become persistent expectations.
+            Continuous and transition self-supervision run in parallel. Objective weights are adapted from predictive
+            skill relative to a no-change persistence baseline rather than being assigned from signal names or domain
+            metadata. Expectations remain a separate belief layer.
 
             Learned expectation graphs are shown for days **1, 3, 5 and 10** so the default models' development can be
             inspected over time. Each graph contains only that day's observations and the expectations known at the end
             of that day; later outcomes are therefore not leaked into earlier snapshots.
 
-            Model outputs remain horizon-free. Self-supervised targets use the value observed in a later sense cycle at
-            the interval that actually occurred; no configured +1/+5/+10 minute forecast horizon exists. Resolved
-            expectations additionally provide replay/surprise experience.
-
             After ten days: discovered numeric predictors: **${models.size}**.
-            Self-supervised observed transitions trained: **${learning.observationTrainer.trainingExampleCount}**.
+            Continuous training examples: **${learning.observationTrainer.trainingExampleCount}**.
+            Meaningful transitions detected: **${learning.transitionTrainer.detectedTransitionCount}**.
+            Transition training examples: **${learning.transitionTrainer.trainingExampleCount}**.
+
+            Objective state after ten days:
+            $objectiveSummary
+
             Resolved expectations: **$resolved** (`Fulfilled`: **$fulfilled**, `Violated`: **$violated**).
             Replayable expectation episodes: **${experiences.size}**.
             Model training examples currently retained across predictors: **$retainedTrainingExamples**.
@@ -110,13 +119,24 @@ object ThermalExpectationReport {
             (`signalInitialValue`) to the expectation's current `value` at its result time, or at the end of the graph
             window while it remains active. Completed series include the result in parentheses. The x-axis therefore
             means **when the expectation was held**, not a forecast target timestamp.
-
-            Replay selection is priority-weighted. The default numeric lifecycle currently assigns high priority to
-            surprising violations and low priority to fulfilled expectations. This is only a working baseline; model,
-            decoder discovery, lifecycle and replay policies remain replaceable components.
             """.trimIndent() + "\n",
         )
     }
+
+    private fun objectiveWeights(
+        learning: ThermalExpectationLearning,
+        signalId: SignalId,
+    ): String {
+        val continuousWeight = learning.objectiveWeights.weight(signalId, LearningObjective.Continuous)
+        val transitionWeight = learning.objectiveWeights.weight(signalId, LearningObjective.Transition)
+        val continuousSkill = learning.objectiveWeights.skill(signalId, LearningObjective.Continuous)
+        val transitionSkill = learning.objectiveWeights.skill(signalId, LearningObjective.Transition)
+        return "continuous=${format(continuousWeight)} (skill=${format(continuousSkill)}), " +
+            "transition=${format(transitionWeight)} (skill=${format(transitionSkill)})"
+    }
+
+    private fun format(value: Double?): String =
+        value?.let { String.format(Locale.ROOT, "%.3f", it) } ?: "n/a"
 
     private fun expectationOverlays(
         expectations: List<Expectation<Double>>,
