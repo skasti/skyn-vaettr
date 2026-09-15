@@ -44,6 +44,8 @@ jobs:
     permissions:
       actions: read
       contents: write
+      issues: write
+      pull-requests: write
     steps:
       - name: Download example reports
         uses: actions/download-artifact@v7
@@ -51,7 +53,7 @@ jobs:
           name: example-reports
           path: build/reports/examples
 
-      - name: Publish thermal example graphs and summary
+      - name: Publish example reports
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -61,12 +63,10 @@ jobs:
         run: |
           set -euo pipefail
 
-          report_dir="build/reports/examples/thermal-expectation"
-          summary="$report_dir/summary.md"
+          reports_root="build/reports/examples"
+          comment_marker='<!-- example-reports -->'
 
-          test -f "$summary"
-          test -f "$report_dir/day.png"
-          test -f "$report_dir/expectations.png"
+          test -d "$reports_root"
 
           if ! gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$RESULTS_BRANCH" >/dev/null 2>&1; then
             gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
@@ -74,65 +74,78 @@ jobs:
               -f sha="$BASE_SHA" >/dev/null
           fi
 
-          publish_graph() {
-            graph="$1"
+          publish_file() {
+            source_file="$1"
             target="$2"
-            description="$3"
             encoded_file=$(mktemp)
             payload_file=$(mktemp)
-            base64 -w0 "$graph" > "$encoded_file"
+            base64 -w0 "$source_file" > "$encoded_file"
 
             published=false
             for attempt in 1 2 3; do
               existing_sha=$(gh api "repos/$GITHUB_REPOSITORY/contents/$target?ref=$RESULTS_BRANCH" --jq '.sha' 2>/dev/null || true)
-
               if [ -n "$existing_sha" ]; then
                 jq -n \
                   --rawfile content "$encoded_file" \
-                  --arg message "ci: update PR $PR_NUMBER $description" \
+                  --arg message "ci: update PR $PR_NUMBER report artifact" \
                   --arg branch "$RESULTS_BRANCH" \
                   --arg sha "$existing_sha" \
-                  '{message: $message, content: $content, branch: $branch, sha: $sha}' \
-                  > "$payload_file"
+                  '{message: $message, content: $content, branch: $branch, sha: $sha}' > "$payload_file"
               else
                 jq -n \
                   --rawfile content "$encoded_file" \
-                  --arg message "ci: publish PR $PR_NUMBER $description" \
+                  --arg message "ci: publish PR $PR_NUMBER report artifact" \
                   --arg branch "$RESULTS_BRANCH" \
-                  '{message: $message, content: $content, branch: $branch}' \
-                  > "$payload_file"
+                  '{message: $message, content: $content, branch: $branch}' > "$payload_file"
               fi
 
               if gh api --method PUT "repos/$GITHUB_REPOSITORY/contents/$target" --input "$payload_file" >/dev/null 2>&1; then
                 published=true
                 break
               fi
-
-              echo "Graph publish raced with another update; retrying ($attempt/3)"
               sleep "$attempt"
             done
 
             rm -f "$encoded_file" "$payload_file"
-            if [ "$published" != true ]; then
-              echo "Failed to publish $target after 3 attempts" >&2
-              exit 1
-            fi
+            [ "$published" = true ] || { echo "Failed to publish $target" >&2; exit 1; }
           }
 
-          publish_graph \
-            "$report_dir/day.png" \
-            "pr-$PR_NUMBER/examples/thermal-expectation/day.png" \
-            "thermal example graph"
+          raw_base="https://raw.githubusercontent.com/$GITHUB_REPOSITORY/$RESULTS_BRANCH/pr-$PR_NUMBER/examples"
+          comment_file=$(mktemp)
+          printf '%s\n' "$comment_marker" > "$comment_file"
 
-          publish_graph \
-            "$report_dir/expectations.png" \
-            "pr-$PR_NUMBER/examples/thermal-expectation/expectations.png" \
-            "thermal expectation graph"
+          found_report=false
+          while IFS= read -r -d '' report_dir; do
+            summary="$report_dir/summary.md"
+            [ -f "$summary" ] || continue
+            found_report=true
 
-          cat "$summary" >> "$GITHUB_STEP_SUMMARY"
-          printf '\n![Thermal expectation example](https://raw.githubusercontent.com/%s/%s/pr-%s/examples/thermal-expectation/day.png?run=%s)\n' \
-            "$GITHUB_REPOSITORY" "$RESULTS_BRANCH" "$PR_NUMBER" "$GITHUB_RUN_ID" \
-            >> "$GITHUB_STEP_SUMMARY"
-          printf '\n![Illustrative expectation series](https://raw.githubusercontent.com/%s/%s/pr-%s/examples/thermal-expectation/expectations.png?run=%s)\n' \
-            "$GITHUB_REPOSITORY" "$RESULTS_BRANCH" "$PR_NUMBER" "$GITHUB_RUN_ID" \
-            >> "$GITHUB_STEP_SUMMARY"
+            report_name=$(basename "$report_dir")
+            printf '\n' >> "$comment_file"
+            cat "$summary" >> "$comment_file"
+
+            while IFS= read -r -d '' image; do
+              image_name=$(basename "$image")
+              publish_file "$image" "pr-$PR_NUMBER/examples/$report_name/$image_name"
+              label=$(basename "$image_name" .png | tr '-' ' ')
+              printf '\n### %s\n\n![%s](%s/%s/%s?run=%s)\n' \
+                "$label" "$label" "$raw_base" "$report_name" "$image_name" "$GITHUB_RUN_ID" \
+                >> "$comment_file"
+            done < <(find "$report_dir" -maxdepth 1 -type f -name '*.png' -print0 | sort -z)
+          done < <(find "$reports_root" -mindepth 1 -maxdepth 1 -type d -print0 | sort -z)
+
+          [ "$found_report" = true ] || { echo "No example report summaries found" >&2; exit 1; }
+
+          existing_comment=$(gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
+            --jq ".[] | select(.body | contains(\"$comment_marker\")) | .id" | head -n1)
+          payload=$(mktemp)
+          jq -Rs '{body: .}' "$comment_file" > "$payload"
+
+          if [ -n "$existing_comment" ]; then
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$existing_comment" --input "$payload" >/dev/null
+          else
+            gh api --method POST "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --input "$payload" >/dev/null
+          fi
+
+          cat "$comment_file" >> "$GITHUB_STEP_SUMMARY"
+          rm -f "$comment_file" "$payload"
