@@ -13,12 +13,12 @@ import no.skasti.skynvaettr.signals.Signal
 import no.skasti.skynvaettr.signals.SignalId
 
 /**
- * Decodes a latent next-transition output without binding the model to one target signal up front.
+ * Decodes dynamically ranked next-transition candidates.
  *
- * Output layout is `[signal identity embedding..., encoded value, confidence]`. The signal portion is
- * matched against the identities of numeric signals observed so far. This keeps target-signal
- * selection in learned representation space while the decoder remains responsible only for mapping
- * that latent identity back to a concrete [Signal].
+ * Each output position represents one candidate signal and has layout
+ * `[candidate signal identity..., next-signal logit, encoded value, experience confidence]`.
+ * The model learns the candidate score; the decoder only maps the winning candidate identity back
+ * to a concrete observed signal and decodes its numeric value.
  */
 class TransitionPredictionDecoder(
     private val signalEmbedder: Embedder<SignalId> = SignalIdentityEmbedder(),
@@ -29,7 +29,7 @@ class TransitionPredictionDecoder(
         get() = signalEmbedder.dimensions
 
     val outputDimensions: Int
-        get() = signalEmbeddingDimensions + 2
+        get() = signalEmbeddingDimensions + 3
 
     val trainingTargetDimensions: Int
         get() = signalEmbeddingDimensions + 1
@@ -40,29 +40,24 @@ class TransitionPredictionDecoder(
 
     fun knownSignals(): List<Signal<Double>> = signals.values.toList()
 
-    fun decode(output: Representation): Prediction<Double> {
-        require(output.positions == 1) { "transition prediction output must contain one position" }
-        require(output.dimensions == outputDimensions) {
-            "expected $outputDimensions transition output dimensions, got ${output.dimensions}"
-        }
-        require(signals.isNotEmpty()) { "cannot decode a transition before observing numeric signals" }
+    fun candidateSignals(output: Representation): List<Signal<Double>> {
+        validateOutput(output)
+        return output.map { embedding -> decodeIdentity(embedding) }
+    }
 
-        val embedding = output[0]
-        val predictedIdentity = DoubleArray(signalEmbeddingDimensions) { embedding[it] }
-        val signal = signals.values.minBy { candidate ->
-            identityDistance(predictedIdentity, signalEmbedder.embed(candidate.id).toDoubleArray())
-        }
-        val identityDistance = identityDistance(
-            predictedIdentity,
-            signalEmbedder.embed(signal.id).toDoubleArray(),
-        )
-        val modelConfidence = embedding[signalEmbeddingDimensions + 1].coerceIn(0.0, 1.0)
-        val identityConfidence = exp(-identityDistance).coerceIn(0.0, 1.0)
+    fun decode(output: Representation): Prediction<Double> {
+        validateOutput(output)
+        val candidates = candidateSignals(output)
+        val logits = DoubleArray(output.positions) { index -> output[index][signalEmbeddingDimensions] }
+        val probabilities = softmax(logits)
+        val winner = logits.indices.maxBy { logits[it] }
+        val embedding = output[winner]
+        val experienceConfidence = embedding[signalEmbeddingDimensions + 2].coerceIn(0.0, 1.0)
 
         return Prediction(
-            signal = signal,
-            value = decodeValue(embedding[signalEmbeddingDimensions]),
-            confidence = (modelConfidence * identityConfidence).coerceIn(0.0, 1.0),
+            signal = candidates[winner],
+            value = decodeValue(embedding[signalEmbeddingDimensions + 1]),
+            confidence = (probabilities[winner] * experienceConfidence).coerceIn(0.0, 1.0),
         )
     }
 
@@ -81,6 +76,28 @@ class TransitionPredictionDecoder(
 
     internal fun decodeValue(value: Double): Double =
         if (value == 0.0) 0.0 else kotlin.math.sign(value) * kotlin.math.expm1(abs(value))
+
+    private fun validateOutput(output: Representation) {
+        require(output.positions > 0) { "transition prediction output must contain at least one candidate" }
+        require(output.dimensions == outputDimensions) {
+            "expected $outputDimensions transition output dimensions, got ${output.dimensions}"
+        }
+        require(signals.isNotEmpty()) { "cannot decode a transition before observing numeric signals" }
+    }
+
+    private fun decodeIdentity(embedding: Embedding): Signal<Double> {
+        val identity = DoubleArray(signalEmbeddingDimensions) { embedding[it] }
+        return signals.values.minBy { candidate ->
+            identityDistance(identity, signalEmbedder.embed(candidate.id).toDoubleArray())
+        }
+    }
+
+    private fun softmax(scores: DoubleArray): DoubleArray {
+        val maxScore = scores.maxOrNull() ?: error("softmax requires candidate scores")
+        val exponentials = DoubleArray(scores.size) { index -> exp(scores[index] - maxScore) }
+        val total = exponentials.sum()
+        return DoubleArray(scores.size) { index -> exponentials[index] / total }
+    }
 
     private fun identityDistance(
         left: DoubleArray,
