@@ -65,8 +65,7 @@ object ThermalExpectationReport {
             "| $day | ${metrics.records} | ${percent(metrics.signalAccuracy)} | ${number(metrics.valueMae)} |"
         }
 
-        Files.writeString(
-            reportDir.resolve("summary.md"),
+        val summary = listOf(
             """
             ## Thermal transition-prediction example
 
@@ -88,7 +87,9 @@ object ThermalExpectationReport {
 
             | Day | Resolved predictions | Target-signal accuracy | Value MAE |
             | ---: | ---: | ---: | ---: |
-            $metricRows
+            """.trimIndent(),
+            metricRows,
+            """
 
             Total resolved transition predictions: **${records.size}**.
             Model training examples: **${learning.model.trainingExampleCount}**.
@@ -97,8 +98,10 @@ object ThermalExpectationReport {
             Thermal is deliberately a harder interpretation case than kitchen because both signals move continuously.
             The report is therefore useful for checking whether attention develops a stable temporal relationship without
             assuming that a high attention weight by itself proves causality.
-            """.trimIndent() + "\n",
-        )
+            """.trimIndent(),
+        ).joinToString("\n") + "\n"
+
+        Files.writeString(reportDir.resolve("summary.md"), summary)
     }
 
     private fun percent(value: Double): String = String.format(Locale.ROOT, "%.1f%%", value * 100.0)
