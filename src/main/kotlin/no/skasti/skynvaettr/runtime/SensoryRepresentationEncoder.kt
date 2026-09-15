@@ -11,11 +11,17 @@ import no.skasti.skynvaettr.signals.Sample
 import no.skasti.skynvaettr.signals.SampleStore
 import no.skasti.skynvaettr.signals.SignalId
 
+enum class SensoryPositionKind {
+    Observation,
+    TransitionEvent,
+}
+
 /** Symbolic provenance kept beside latent positions for diagnostics only. */
 data class SensoryPosition(
     val signalId: SignalId,
     val timestamp: Instant,
     val relativeTime: Double,
+    val kind: SensoryPositionKind = SensoryPositionKind.Observation,
 )
 
 /** One encoded sensory-history frame and the provenance of its positions. */
@@ -28,12 +34,15 @@ data class SensoryFrame(
  * Converts sampled history into the generic [Representation] consumed by learned models.
  *
  * Signal identity encoding delegates to [SignalIdentityEmbedder], which performs signal-id
- * tokenization and token encoding. Each final sensory position is therefore:
+ * tokenization and token encoding. Ordinary sensory positions are:
  *
- * `[signal identity embedding..., scalar value, actual relative time]`.
+ * `[signal identity embedding..., scalar value, actual relative time, event flag=0]`.
  *
- * Position metadata is deliberately kept outside [Representation]; models consume only the encoded
- * vectors while reports can still label attention weights with the originating signal and time.
+ * A meaningful observed transition may additionally be encoded as:
+ *
+ * `[signal identity embedding..., delta, actual relative time, event flag=1]`.
+ *
+ * The event token describes an observed fact only; it contains no target-signal information.
  */
 class SensoryRepresentationEncoder(
     private val sampleStore: SampleStore,
@@ -53,7 +62,7 @@ class SensoryRepresentationEncoder(
         if (observations.isEmpty()) return null
 
         return SensoryFrame(
-            representation = Representation.from(observations.map { encode(it.sample, it.relativeTime) }),
+            representation = Representation.from(observations.map { encodeObservation(it.sample, it.relativeTime) }),
             positions = observations.map { observation ->
                 SensoryPosition(
                     signalId = observation.sample.signal.id,
@@ -64,9 +73,18 @@ class SensoryRepresentationEncoder(
         )
     }
 
-    /** Encodes an exact event/sample using the same vector layout as history positions. */
-    fun encodeEvent(sample: Sample<*>, now: Instant): Embedding =
-        encode(sample, relativeTime(sample.timestamp, now))
+    fun encodeTransitionEvent(
+        previous: Sample<Double>,
+        current: Sample<Double>,
+        now: Instant,
+    ): Embedding {
+        require(previous.signal.id == current.signal.id) { "transition samples must refer to the same signal" }
+        val identity = signalEmbedder.embed(current.signal.id).toDoubleArray()
+        val delta = current.value - previous.value
+        return Embedding.from(
+            identity + doubleArrayOf(delta, relativeTime(current.timestamp, now), 1.0),
+        )
+    }
 
     private fun selectObservations(
         now: Instant,
@@ -92,9 +110,9 @@ class SensoryRepresentationEncoder(
             }
     }
 
-    private fun encode(sample: Sample<*>, relativeTime: Double): Embedding {
+    private fun encodeObservation(sample: Sample<*>, relativeTime: Double): Embedding {
         val identity = signalEmbedder.embed(sample.signal.id).toDoubleArray()
-        return Embedding.from(identity + doubleArrayOf(scalarValue(sample.value), relativeTime))
+        return Embedding.from(identity + doubleArrayOf(scalarValue(sample.value), relativeTime, 0.0))
     }
 
     private fun relativeTime(timestamp: Instant, now: Instant): Double =
