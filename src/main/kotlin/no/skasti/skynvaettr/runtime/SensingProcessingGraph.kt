@@ -30,10 +30,9 @@ data class SensoryPosition(
  * than treating a sample as a state that remains valid until the next update.
  *
  * Each selected observation is represented from signal identity + scalar value + relative time.
- * Compatible [Model] components then consume that [Representation] and emit another representation;
- * compatible [PredictionDecoder] components translate model output into runtime predictions.
- * [PredictionRouteFactory] instances may also create graph-owned model/decoder routes for newly
- * observed signals without requiring scenario-specific target wiring.
+ * Compatible [Model] components are owned by the graph. Ordinary prediction models run when the graph
+ * also has compatible decoders; event-conditioned trainers may instead discover a graph-owned model
+ * through [models] and invoke it only when their event semantics require inference.
  */
 class SensingProcessingGraph(
     private val sampleStore: SampleStore,
@@ -85,24 +84,26 @@ class SensingProcessingGraph(
             )
         }
         latestExecutions = buildList {
-            modelComponents
-                .filter { it.supports(representation) }
-                .forEach { model ->
-                    val output = model.forward(representation)
-                    predictionDecoders
-                        .filter { it.supports(output) }
-                        .forEach { decoder ->
-                            add(
-                                PredictionExecution(
-                                    model = model,
-                                    decoder = decoder,
-                                    input = representation,
-                                    output = output,
-                                    prediction = decoder.decode(output),
-                                ),
-                            )
-                        }
-                }
+            if (predictionDecoders.isNotEmpty()) {
+                modelComponents
+                    .filter { it.supports(representation) }
+                    .forEach { model ->
+                        val output = model.forward(representation)
+                        predictionDecoders
+                            .filter { it.supports(output) }
+                            .forEach { decoder ->
+                                add(
+                                    PredictionExecution(
+                                        model = model,
+                                        decoder = decoder,
+                                        input = representation,
+                                        output = output,
+                                        prediction = decoder.decode(output),
+                                    ),
+                                )
+                            }
+                    }
+            }
 
             discoveredRoutes.values.forEach { route ->
                 if (!route.model.supports(representation)) return@forEach
