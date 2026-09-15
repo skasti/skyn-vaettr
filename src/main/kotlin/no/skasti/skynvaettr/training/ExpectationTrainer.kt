@@ -15,12 +15,13 @@ import no.skasti.skynvaettr.signals.Sample
 import no.skasti.skynvaettr.signals.SampleStore
 
 /**
- * Generic online trainer that turns resolved expectations into replayable episodes.
+ * Generic trainer for expectation lifecycle and replay.
  *
- * Models are not configured on the trainer. The trainer discovers prediction-producing trainable
- * model executions from the completed [ProcessingGraph], retains the exact latent [Representation]
- * input used for inference, and trains the same model through the decoder's output-space target
- * mapping when an expectation resolves.
+ * Ordinary world-model learning is independent of this trainer and may happen continuously through
+ * [ObservationTrainer]. This trainer instead captures the additional significance carried by beliefs:
+ * it discovers prediction-producing trainable executions, opens expectations through policy, records
+ * resolved expectation episodes, and may reinforce/replay those outcomes on the exact model/input
+ * pair that produced the original prediction.
  */
 class ExpectationTrainer<T>(
     private val sampleStore: SampleStore,
