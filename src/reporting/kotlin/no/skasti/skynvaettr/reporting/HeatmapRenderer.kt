@@ -23,9 +23,25 @@ class HeatmapRenderer {
         require(values.size == rowLabels.size) { "one value row is required per row label" }
         require(values.all { it.size == columnLabels.size }) { "all value rows must match column labels" }
 
-        val cellWidth = 145
+        val labelFont = Font(Font.SANS_SERIF, Font.PLAIN, 15)
+        val metricsImage = BufferedImage(1, 1, BufferedImage.TYPE_INT_ARGB)
+        val metricsGraphics = metricsImage.createGraphics()
+        val labelMetrics = try {
+            metricsGraphics.font = labelFont
+            metricsGraphics.fontMetrics
+        } finally {
+            metricsGraphics.dispose()
+        }
+
+        val cellWidth = maxOf(
+            120,
+            columnLabels.maxOf { labelMetrics.stringWidth(it) } + 28,
+        )
         val cellHeight = 58
-        val leftMargin = 330
+        val leftMargin = maxOf(
+            180,
+            rowLabels.maxOf { labelMetrics.stringWidth(it) } + 36,
+        )
         val topMargin = 125
         val rightMargin = 45
         val bottomMargin = 80
@@ -41,11 +57,12 @@ class HeatmapRenderer {
             graphics.color = Color(30, 30, 30)
             graphics.drawString(title, 28, 40)
 
-            graphics.font = Font(Font.SANS_SERIF, Font.PLAIN, 15)
+            graphics.font = labelFont
             columnLabels.forEachIndexed { column, label ->
                 val x = leftMargin + column * cellWidth
+                val labelWidth = graphics.fontMetrics.stringWidth(label)
                 graphics.color = Color(45, 45, 45)
-                graphics.drawString(label, x + 8, topMargin - 18)
+                graphics.drawString(label, x + (cellWidth - labelWidth) / 2, topMargin - 18)
             }
 
             val max = values.flatMap { row -> row.asIterable() }.maxOrNull()?.takeIf { it > 0.0 } ?: 1.0
@@ -61,7 +78,9 @@ class HeatmapRenderer {
                     graphics.color = cellColor
                     graphics.fillRect(x, y, cellWidth - 2, cellHeight - 2)
                     graphics.color = if (normalized > 0.55) Color.WHITE else Color(20, 20, 20)
-                    graphics.drawString(valueFormatter(rawValue), x + 10, y + 34)
+                    val renderedValue = valueFormatter(rawValue)
+                    val valueWidth = graphics.fontMetrics.stringWidth(renderedValue)
+                    graphics.drawString(renderedValue, x + (cellWidth - valueWidth) / 2, y + 34)
                 }
             }
         } finally {
