@@ -9,14 +9,14 @@ import no.skasti.skynvaettr.representation.Embedding
 import no.skasti.skynvaettr.representation.Representation
 
 /**
- * Small dependency-free single-head attention model for next-transition predictions.
+ * Small dependency-free single-head self-attention model for next-transition predictions.
  *
- * Input position 0 is the source transition that triggered the prediction. Remaining positions are
- * ordinary sensory history. Q is learned from the source-transition position, while K and V are
- * learned from history positions. The attended context is decoded into latent signal identity and
- * numeric value; [TransitionPredictionDecoder] maps the latent identity to a known signal.
+ * Every sensory position produces its own learned Q, K and V projection and may attend to every
+ * other sensory position. The contextualized positions are mean-pooled into a shared world context
+ * consumed by the transition head. Because every contextualized position contributes to the loss,
+ * gradients train every attention row rather than only one event-specific query.
  *
- * This is deliberately an inspectable Q/K/V baseline rather than a full Transformer.
+ * This is deliberately an inspectable baseline rather than a full Transformer.
  */
 class LearnedAttentionTransitionModel(
     private val signalEmbeddingDimensions: Int,
@@ -36,7 +36,7 @@ class LearnedAttentionTransitionModel(
     private lateinit var signalBias: DoubleArray
     private var valueBias: Double = 0.0
 
-    private var latestWeights: DoubleArray = doubleArrayOf()
+    private var latestWeights: List<DoubleArray> = emptyList()
 
     var trainingExampleCount: Long = 0
         private set
@@ -51,19 +51,20 @@ class LearnedAttentionTransitionModel(
     }
 
     override fun supports(input: Representation): Boolean =
-        (inputDimensions == null || input.dimensions == inputDimensions) && input.positions >= 2
+        input.positions > 0 && (inputDimensions == null || input.dimensions == inputDimensions)
 
     override fun forward(input: Representation): Representation {
         ensureInitialized(input)
         val state = forwardState(input)
-        latestWeights = state.weights.clone()
+        latestWeights = state.weights.map(DoubleArray::clone)
         val experienceConfidence = (1.0 - exp(-trainingExampleCount / 32.0)).coerceIn(0.0, 1.0)
         return Representation.of(
             Embedding.from(state.signalOutput + doubleArrayOf(state.valueOutput, experienceConfidence)),
         )
     }
 
-    fun latestAttentionWeights(): DoubleArray = latestWeights.clone()
+    /** Row i is the attention distribution from input position i across all input positions. */
+    fun latestAttentionWeights(): List<DoubleArray> = latestWeights.map(DoubleArray::clone)
 
     override fun train(
         input: Representation,
@@ -94,65 +95,72 @@ class LearnedAttentionTransitionModel(
         val loss = signalLoss + valueError * valueError
         exponentialMovingLoss = exponentialMovingLoss?.let { previous -> previous * 0.95 + loss * 0.05 } ?: loss
 
-        val contextGradient = DoubleArray(attentionDimensions)
+        val pooledContextGradient = DoubleArray(attentionDimensions)
         for (contextDimension in 0 until attentionDimensions) {
             for (signalDimension in 0 until signalEmbeddingDimensions) {
-                contextGradient[contextDimension] +=
+                pooledContextGradient[contextDimension] +=
                     signalGradient[signalDimension] * signalProjection[contextDimension][signalDimension]
             }
-            contextGradient[contextDimension] += valueGradient * valueHead[contextDimension]
+            pooledContextGradient[contextDimension] += valueGradient * valueHead[contextDimension]
         }
 
         val signalProjectionGradient = Array(attentionDimensions) { DoubleArray(signalEmbeddingDimensions) }
         for (contextDimension in 0 until attentionDimensions) {
             for (signalDimension in 0 until signalEmbeddingDimensions) {
                 signalProjectionGradient[contextDimension][signalDimension] =
-                    state.context[contextDimension] * signalGradient[signalDimension]
+                    state.pooledContext[contextDimension] * signalGradient[signalDimension]
             }
         }
         val valueHeadGradient = DoubleArray(attentionDimensions) { dimension ->
-            state.context[dimension] * valueGradient
+            state.pooledContext[dimension] * valueGradient
         }
 
-        val attentionGradient = DoubleArray(state.weights.size) { position ->
-            dot(contextGradient, state.values[position])
+        // Mean pooling gives every contextualized position an equal share of the output gradient.
+        val contextGradient = DoubleArray(attentionDimensions) { dimension ->
+            pooledContextGradient[dimension] / state.contexts.size.toDouble()
         }
-        val weightedAttentionGradient = state.weights.indices.sumOf { position ->
-            state.weights[position] * attentionGradient[position]
-        }
-        val scoreGradient = DoubleArray(state.weights.size) { position ->
-            state.weights[position] * (attentionGradient[position] - weightedAttentionGradient)
-        }
-
         val scale = 1.0 / sqrt(attentionDimensions.toDouble())
-        val queryGradient = DoubleArray(attentionDimensions)
-        val keyGradient = Array(state.weights.size) { DoubleArray(attentionDimensions) }
-        val projectedValueGradient = Array(state.weights.size) { DoubleArray(attentionDimensions) }
-        for (position in state.weights.indices) {
-            for (dimension in 0 until attentionDimensions) {
-                queryGradient[dimension] += scoreGradient[position] * state.keys[position][dimension] * scale
-                keyGradient[position][dimension] = scoreGradient[position] * state.query[dimension] * scale
-                projectedValueGradient[position][dimension] = state.weights[position] * contextGradient[dimension]
+        val queryGradients = Array(state.inputs.size) { DoubleArray(attentionDimensions) }
+        val keyGradients = Array(state.inputs.size) { DoubleArray(attentionDimensions) }
+        val valueGradients = Array(state.inputs.size) { DoubleArray(attentionDimensions) }
+
+        state.weights.indices.forEach { queryIndex ->
+            val attentionGradient = DoubleArray(state.inputs.size) { keyIndex ->
+                dot(contextGradient, state.values[keyIndex])
+            }
+            val weightedAttentionGradient = state.weights[queryIndex].indices.sumOf { keyIndex ->
+                state.weights[queryIndex][keyIndex] * attentionGradient[keyIndex]
+            }
+            val scoreGradient = DoubleArray(state.inputs.size) { keyIndex ->
+                state.weights[queryIndex][keyIndex] *
+                    (attentionGradient[keyIndex] - weightedAttentionGradient)
+            }
+
+            state.inputs.indices.forEach { keyIndex ->
+                for (dimension in 0 until attentionDimensions) {
+                    queryGradients[queryIndex][dimension] +=
+                        scoreGradient[keyIndex] * state.keys[keyIndex][dimension] * scale
+                    keyGradients[keyIndex][dimension] +=
+                        scoreGradient[keyIndex] * state.queries[queryIndex][dimension] * scale
+                    valueGradients[keyIndex][dimension] +=
+                        state.weights[queryIndex][keyIndex] * contextGradient[dimension]
+                }
             }
         }
 
         val queryProjectionGradient = Array(input.dimensions) { DoubleArray(attentionDimensions) }
-        for (inputDimension in state.queryInput.indices) {
-            for (dimension in 0 until attentionDimensions) {
-                queryProjectionGradient[inputDimension][dimension] =
-                    state.queryInput[inputDimension] * queryGradient[dimension]
-            }
-        }
-
         val keyProjectionGradient = Array(input.dimensions) { DoubleArray(attentionDimensions) }
         val valueProjectionGradient = Array(input.dimensions) { DoubleArray(attentionDimensions) }
-        for (position in state.historyInputs.indices) {
-            for (inputDimension in state.historyInputs[position].indices) {
+        state.inputs.indices.forEach { position ->
+            state.inputs[position].indices.forEach { inputDimension ->
                 for (dimension in 0 until attentionDimensions) {
+                    val inputValue = state.inputs[position][inputDimension]
+                    queryProjectionGradient[inputDimension][dimension] +=
+                        inputValue * queryGradients[position][dimension]
                     keyProjectionGradient[inputDimension][dimension] +=
-                        state.historyInputs[position][inputDimension] * keyGradient[position][dimension]
+                        inputValue * keyGradients[position][dimension]
                     valueProjectionGradient[inputDimension][dimension] +=
-                        state.historyInputs[position][inputDimension] * projectedValueGradient[position][dimension]
+                        inputValue * valueGradients[position][dimension]
                 }
             }
         }
@@ -180,10 +188,10 @@ class LearnedAttentionTransitionModel(
     }
 
     private fun ensureInitialized(input: Representation) {
-        require(input.positions >= 2) { "transition attention input needs a query position plus sensory history" }
+        require(input.positions > 0) { "self-attention requires at least one sensory position" }
         if (inputDimensions != null) {
             require(supports(input)) {
-                "Expected input width $inputDimensions with at least two positions, got ${input.dimensions} x ${input.positions}"
+                "Expected input width $inputDimensions, got ${input.dimensions}"
             }
             return
         }
@@ -199,42 +207,41 @@ class LearnedAttentionTransitionModel(
     }
 
     private fun forwardState(input: Representation): ForwardState {
-        val normalized = input.map(::normalizedInput)
-        val queryInput = normalized.first()
-        val historyInputs = normalized.drop(1)
-        val query = project(queryInput, queryProjection)
-        val keys = historyInputs.map { project(it, keyProjection) }
-        val values = historyInputs.map { project(it, valueProjection) }
+        val inputs = input.map(::normalizedInput)
+        val queries = inputs.map { project(it, queryProjection) }
+        val keys = inputs.map { project(it, keyProjection) }
+        val values = inputs.map { project(it, valueProjection) }
         val result = attention.apply(
-            queries = Representation.of(Embedding.from(query)),
+            queries = Representation.from(queries.map(Embedding::from)),
             keys = Representation.from(keys.map(Embedding::from)),
             values = Representation.from(values.map(Embedding::from)),
         )
-        val context = result.output[0].toDoubleArray()
+        val contexts = result.output.map(Embedding::toDoubleArray)
+        val pooledContext = DoubleArray(attentionDimensions) { dimension ->
+            contexts.sumOf { it[dimension] } / contexts.size.toDouble()
+        }
         val signalOutput = DoubleArray(signalEmbeddingDimensions) { signalDimension ->
             signalBias[signalDimension] +
-                context.indices.sumOf { dimension ->
-                    context[dimension] * signalProjection[dimension][signalDimension]
+                pooledContext.indices.sumOf { dimension ->
+                    pooledContext[dimension] * signalProjection[dimension][signalDimension]
                 }
         }
-        val valueOutput = valueBias + context.indices.sumOf { dimension -> context[dimension] * valueHead[dimension] }
+        val valueOutput = valueBias +
+            pooledContext.indices.sumOf { dimension -> pooledContext[dimension] * valueHead[dimension] }
         return ForwardState(
-            queryInput = queryInput,
-            historyInputs = historyInputs,
-            query = query,
+            inputs = inputs,
+            queries = queries,
             keys = keys,
             values = values,
-            weights = result.weights.single(),
-            context = context,
+            weights = result.weights,
+            contexts = contexts,
+            pooledContext = pooledContext,
             signalOutput = signalOutput,
             valueOutput = valueOutput,
         )
     }
 
-    /**
-     * Sensory/event positions use signal identity followed by raw numeric value and relative time.
-     * Signed-log scaling keeps large continuous values from dominating early gradients.
-     */
+    /** Sensory positions use signal identity followed by raw numeric value and relative time. */
     private fun normalizedInput(embedding: Embedding): DoubleArray =
         embedding.toDoubleArray().also { values ->
             if (values.size >= 2) {
@@ -244,14 +251,9 @@ class LearnedAttentionTransitionModel(
             }
         }
 
-    private fun project(
-        input: DoubleArray,
-        matrix: Array<DoubleArray>,
-    ): DoubleArray =
+    private fun project(input: DoubleArray, matrix: Array<DoubleArray>): DoubleArray =
         DoubleArray(attentionDimensions) { outputDimension ->
-            input.indices.sumOf { inputDimension ->
-                input[inputDimension] * matrix[inputDimension][outputDimension]
-            }
+            input.indices.sumOf { inputDimension -> input[inputDimension] * matrix[inputDimension][outputDimension] }
         }
 
     private fun dot(left: DoubleArray, right: DoubleArray): Double =
@@ -262,13 +264,13 @@ class LearnedAttentionTransitionModel(
     private fun clip(value: Double): Double = value.coerceIn(-5.0, 5.0)
 
     private data class ForwardState(
-        val queryInput: DoubleArray,
-        val historyInputs: List<DoubleArray>,
-        val query: DoubleArray,
+        val inputs: List<DoubleArray>,
+        val queries: List<DoubleArray>,
         val keys: List<DoubleArray>,
         val values: List<DoubleArray>,
-        val weights: DoubleArray,
-        val context: DoubleArray,
+        val weights: List<DoubleArray>,
+        val contexts: List<DoubleArray>,
+        val pooledContext: DoubleArray,
         val signalOutput: DoubleArray,
         val valueOutput: Double,
     )
