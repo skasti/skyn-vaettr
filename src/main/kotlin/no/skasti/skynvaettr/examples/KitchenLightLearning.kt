@@ -5,12 +5,14 @@ import no.skasti.skynvaettr.expectations.NumericExpectationPolicy
 import no.skasti.skynvaettr.models.DoublePredictionRouteFactory
 import no.skasti.skynvaettr.runtime.SensingProcessingGraph
 import no.skasti.skynvaettr.signals.InMemorySampleStore
+import no.skasti.skynvaettr.training.AdaptiveObjectiveWeights
 import no.skasti.skynvaettr.training.ExpectationExperience
 import no.skasti.skynvaettr.training.ExpectationTrainer
 import no.skasti.skynvaettr.training.ObservationTrainer
+import no.skasti.skynvaettr.training.TransitionTrainer
 import no.skasti.skynvaettr.training.WeightedPriorityReplaySelector
 
-/** Generic observation- and expectation-learning wiring for [KitchenLightScenario]. */
+/** Generic multi-objective observation- and expectation-learning wiring for [KitchenLightScenario]. */
 class KitchenLightLearning(
     val world: KitchenLightScenario = KitchenLightScenario(),
 ) {
@@ -19,7 +21,9 @@ class KitchenLightLearning(
         sampleStore = sampleStore,
         predictionRouteFactories = listOf(DoublePredictionRouteFactory()),
     )
-    val observationTrainer = ObservationTrainer()
+    val objectiveWeights = AdaptiveObjectiveWeights()
+    val observationTrainer = ObservationTrainer(objectiveWeights)
+    val transitionTrainer = TransitionTrainer(objectiveWeights)
     val trainer = ExpectationTrainer(
         sampleStore = sampleStore,
         policy = NumericExpectationPolicy(
@@ -33,6 +37,6 @@ class KitchenLightLearning(
     val vaettr = Vaettr(
         sampleStore = sampleStore,
         graph = graph,
-        trainers = listOf(observationTrainer, trainer),
+        trainers = listOf(observationTrainer, transitionTrainer, trainer),
     )
 }
