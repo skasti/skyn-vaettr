@@ -4,6 +4,7 @@ import kotlin.math.exp
 import kotlin.math.ln
 import kotlin.math.ln1p
 import kotlin.math.sqrt
+import kotlin.math.tanh
 import kotlin.random.Random
 import no.skasti.skynvaettr.attention.ScaledDotProductAttention
 import no.skasti.skynvaettr.representation.Embedding
@@ -13,17 +14,17 @@ import no.skasti.skynvaettr.representation.Representation
  * Small dependency-free candidate-conditioned attention model for next-transition predictions.
  *
  * Every distinct signal identity present in the sensory history becomes one candidate query. The
- * same learned query projection is therefore reused for every candidate signal, while K/V are
- * projected from the complete sensory history. Each candidate gets its own attention row, next-
- * transition logit and candidate-specific value prediction.
+ * same learned Q projection is reused for every candidate while K/V are projected from the complete
+ * sensory history. A shared nonlinear readout over `[candidate query ; attended context]` produces
+ * one next-signal logit and candidate-specific value per signal.
  *
  * Training uses cross-entropy over candidate logits for target-signal identity and a numeric value
- * loss only for the observed target candidate. This avoids regressing toward an average point
- * between signal identity embeddings.
+ * loss only for the observed target candidate.
  */
 class LearnedAttentionTransitionModel(
     private val signalEmbeddingDimensions: Int,
     private val attentionDimensions: Int = 8,
+    private val hiddenDimensions: Int = 16,
     private val learningRate: Double = 0.01,
     seed: Int = 37,
 ) : TrainableModel {
@@ -34,10 +35,10 @@ class LearnedAttentionTransitionModel(
     private lateinit var queryProjection: Array<DoubleArray>
     private lateinit var keyProjection: Array<DoubleArray>
     private lateinit var valueProjection: Array<DoubleArray>
-    private lateinit var scoreContextHead: DoubleArray
-    private lateinit var scoreQueryHead: DoubleArray
-    private lateinit var valueContextHead: DoubleArray
-    private lateinit var valueQueryHead: DoubleArray
+    private lateinit var hiddenProjection: Array<DoubleArray>
+    private lateinit var hiddenBias: DoubleArray
+    private lateinit var scoreHead: DoubleArray
+    private lateinit var valueHead: DoubleArray
     private var scoreBias: Double = 0.0
     private var valueBias: Double = 0.0
 
@@ -52,6 +53,7 @@ class LearnedAttentionTransitionModel(
     init {
         require(signalEmbeddingDimensions > 0)
         require(attentionDimensions > 0)
+        require(hiddenDimensions > 0)
         require(learningRate > 0.0 && learningRate.isFinite())
     }
 
@@ -104,7 +106,6 @@ class LearnedAttentionTransitionModel(
         }
         val targetValue = targetEmbedding[signalEmbeddingDimensions]
         val probabilities = softmax(state.logits)
-
         val scoreGradients = DoubleArray(state.logits.size) { candidateIndex ->
             probabilities[candidateIndex] - if (candidateIndex == targetIndex) 1.0 else 0.0
         }
@@ -113,31 +114,51 @@ class LearnedAttentionTransitionModel(
         val loss = -ln(probabilities[targetIndex].coerceAtLeast(1e-12)) + valueError * valueError
         exponentialMovingLoss = exponentialMovingLoss?.let { previous -> previous * 0.95 + loss * 0.05 } ?: loss
 
-        val scoreContextHeadGradient = DoubleArray(attentionDimensions)
-        val scoreQueryHeadGradient = DoubleArray(attentionDimensions)
-        val valueContextHeadGradient = DoubleArray(attentionDimensions)
-        val valueQueryHeadGradient = DoubleArray(attentionDimensions)
+        val scoreHeadGradient = DoubleArray(hiddenDimensions)
+        val valueHeadGradient = DoubleArray(hiddenDimensions)
+        val hiddenProjectionGradient = Array(attentionDimensions * 2) { DoubleArray(hiddenDimensions) }
+        val hiddenBiasGradient = DoubleArray(hiddenDimensions)
         var scoreBiasGradient = 0.0
 
-        val contextGradients = Array(state.candidateIdentities.size) { DoubleArray(attentionDimensions) }
         val queryGradients = Array(state.candidateIdentities.size) { DoubleArray(attentionDimensions) }
+        val contextGradients = Array(state.candidateIdentities.size) { DoubleArray(attentionDimensions) }
 
         state.candidateIdentities.indices.forEach { candidateIndex ->
             val scoreGradient = scoreGradients[candidateIndex]
+            val candidateValueGradient = if (candidateIndex == targetIndex) valueGradient else 0.0
             scoreBiasGradient += scoreGradient
-            for (dimension in 0 until attentionDimensions) {
-                scoreContextHeadGradient[dimension] += state.contexts[candidateIndex][dimension] * scoreGradient
-                scoreQueryHeadGradient[dimension] += state.queries[candidateIndex][dimension] * scoreGradient
-                contextGradients[candidateIndex][dimension] += scoreGradient * scoreContextHead[dimension]
-                queryGradients[candidateIndex][dimension] += scoreGradient * scoreQueryHead[dimension]
-            }
-        }
 
-        for (dimension in 0 until attentionDimensions) {
-            valueContextHeadGradient[dimension] = state.contexts[targetIndex][dimension] * valueGradient
-            valueQueryHeadGradient[dimension] = state.queries[targetIndex][dimension] * valueGradient
-            contextGradients[targetIndex][dimension] += valueGradient * valueContextHead[dimension]
-            queryGradients[targetIndex][dimension] += valueGradient * valueQueryHead[dimension]
+            val hiddenGradient = DoubleArray(hiddenDimensions) { hiddenDimension ->
+                scoreGradient * scoreHead[hiddenDimension] +
+                    candidateValueGradient * valueHead[hiddenDimension]
+            }
+            val hiddenPreActivationGradient = DoubleArray(hiddenDimensions) { hiddenDimension ->
+                val activation = state.hidden[candidateIndex][hiddenDimension]
+                hiddenGradient[hiddenDimension] * (1.0 - activation * activation)
+            }
+
+            for (hiddenDimension in 0 until hiddenDimensions) {
+                scoreHeadGradient[hiddenDimension] += state.hidden[candidateIndex][hiddenDimension] * scoreGradient
+                if (candidateIndex == targetIndex) {
+                    valueHeadGradient[hiddenDimension] +=
+                        state.hidden[candidateIndex][hiddenDimension] * valueGradient
+                }
+                hiddenBiasGradient[hiddenDimension] += hiddenPreActivationGradient[hiddenDimension]
+            }
+
+            val featureGradient = DoubleArray(attentionDimensions * 2)
+            state.features[candidateIndex].indices.forEach { featureDimension ->
+                for (hiddenDimension in 0 until hiddenDimensions) {
+                    hiddenProjectionGradient[featureDimension][hiddenDimension] +=
+                        state.features[candidateIndex][featureDimension] * hiddenPreActivationGradient[hiddenDimension]
+                    featureGradient[featureDimension] +=
+                        hiddenProjection[featureDimension][hiddenDimension] * hiddenPreActivationGradient[hiddenDimension]
+                }
+            }
+            for (dimension in 0 until attentionDimensions) {
+                queryGradients[candidateIndex][dimension] += featureGradient[dimension]
+                contextGradients[candidateIndex][dimension] += featureGradient[attentionDimensions + dimension]
+            }
         }
 
         val scale = 1.0 / sqrt(attentionDimensions.toDouble())
@@ -200,11 +221,16 @@ class LearnedAttentionTransitionModel(
                 valueProjection[inputDimension][dimension] -= step * clip(valueProjectionGradient[inputDimension][dimension])
             }
         }
-        for (dimension in 0 until attentionDimensions) {
-            scoreContextHead[dimension] -= step * clip(scoreContextHeadGradient[dimension])
-            scoreQueryHead[dimension] -= step * clip(scoreQueryHeadGradient[dimension])
-            valueContextHead[dimension] -= step * clip(valueContextHeadGradient[dimension])
-            valueQueryHead[dimension] -= step * clip(valueQueryHeadGradient[dimension])
+        for (featureDimension in hiddenProjection.indices) {
+            for (hiddenDimension in 0 until hiddenDimensions) {
+                hiddenProjection[featureDimension][hiddenDimension] -=
+                    step * clip(hiddenProjectionGradient[featureDimension][hiddenDimension])
+            }
+        }
+        for (hiddenDimension in 0 until hiddenDimensions) {
+            hiddenBias[hiddenDimension] -= step * clip(hiddenBiasGradient[hiddenDimension])
+            scoreHead[hiddenDimension] -= step * clip(scoreHeadGradient[hiddenDimension])
+            valueHead[hiddenDimension] -= step * clip(valueHeadGradient[hiddenDimension])
         }
         scoreBias -= step * clip(scoreBiasGradient)
         valueBias -= step * clip(valueGradient)
@@ -227,10 +253,12 @@ class LearnedAttentionTransitionModel(
         queryProjection = Array(input.dimensions) { DoubleArray(attentionDimensions) { randomWeight() } }
         keyProjection = Array(input.dimensions) { DoubleArray(attentionDimensions) { randomWeight() } }
         valueProjection = Array(input.dimensions) { DoubleArray(attentionDimensions) { randomWeight() } }
-        scoreContextHead = DoubleArray(attentionDimensions) { randomWeight() }
-        scoreQueryHead = DoubleArray(attentionDimensions) { randomWeight() }
-        valueContextHead = DoubleArray(attentionDimensions) { randomWeight() }
-        valueQueryHead = DoubleArray(attentionDimensions) { randomWeight() }
+        hiddenProjection = Array(attentionDimensions * 2) {
+            DoubleArray(hiddenDimensions) { randomWeight() }
+        }
+        hiddenBias = DoubleArray(hiddenDimensions)
+        scoreHead = DoubleArray(hiddenDimensions) { randomWeight() }
+        valueHead = DoubleArray(hiddenDimensions) { randomWeight() }
     }
 
     private fun forwardState(input: Representation): ForwardState {
@@ -250,15 +278,23 @@ class LearnedAttentionTransitionModel(
             values = Representation.from(values.map(Embedding::from)),
         )
         val contexts = result.output.map(Embedding::toDoubleArray)
+        val features = candidateIdentities.indices.map { candidateIndex ->
+            queries[candidateIndex] + contexts[candidateIndex]
+        }
+        val hidden = features.map { feature ->
+            DoubleArray(hiddenDimensions) { hiddenDimension ->
+                var value = hiddenBias[hiddenDimension]
+                feature.indices.forEach { featureDimension ->
+                    value += feature[featureDimension] * hiddenProjection[featureDimension][hiddenDimension]
+                }
+                tanh(value)
+            }
+        }
         val logits = DoubleArray(candidateIdentities.size) { candidateIndex ->
-            scoreBias +
-                dot(contexts[candidateIndex], scoreContextHead) +
-                dot(queries[candidateIndex], scoreQueryHead)
+            scoreBias + dot(hidden[candidateIndex], scoreHead)
         }
         val valueOutputs = DoubleArray(candidateIdentities.size) { candidateIndex ->
-            valueBias +
-                dot(contexts[candidateIndex], valueContextHead) +
-                dot(queries[candidateIndex], valueQueryHead)
+            valueBias + dot(hidden[candidateIndex], valueHead)
         }
 
         return ForwardState(
@@ -270,6 +306,8 @@ class LearnedAttentionTransitionModel(
             values = values,
             weights = result.weights,
             contexts = contexts,
+            features = features,
+            hidden = hidden,
             logits = logits,
             valueOutputs = valueOutputs,
         )
@@ -325,6 +363,8 @@ class LearnedAttentionTransitionModel(
         val values: List<DoubleArray>,
         val weights: List<DoubleArray>,
         val contexts: List<DoubleArray>,
+        val features: List<DoubleArray>,
+        val hidden: List<DoubleArray>,
         val logits: DoubleArray,
         val valueOutputs: DoubleArray,
     )
