@@ -1,9 +1,10 @@
 package no.skasti.skynvaettr.runtime
 
 import java.time.Duration
-import java.time.Instant
-import kotlin.math.abs
-import no.skasti.skynvaettr.representation.Embedding
+import no.skasti.skynvaettr.models.Model
+import no.skasti.skynvaettr.models.PredictionDecoder
+import no.skasti.skynvaettr.models.PredictionRoute
+import no.skasti.skynvaettr.models.PredictionRouteFactory
 import no.skasti.skynvaettr.representation.Embedder
 import no.skasti.skynvaettr.representation.Representation
 import no.skasti.skynvaettr.representation.SignalIdentityEmbedder
@@ -12,106 +13,105 @@ import no.skasti.skynvaettr.signals.SampleStore
 import no.skasti.skynvaettr.signals.SignalId
 
 /**
- * Initial default sensing graph based on the strongest generic sensory pattern explored in playpen.
+ * General sensory graph retained for ordinary prediction routes.
  *
- * Historical observations come from the canonical [SampleStore]. Every signal is offered the same
- * generic log-spaced history ages, and selected observations retain their actual timestamp rather
- * than treating a sample as a state that remains valid until the next update.
+ * Preprocessing is delegated to [SensoryRepresentationEncoder], making the active stages explicit:
+ * history selection -> signal-id tokenization/encoding -> sensory [Representation]. This graph then
+ * runs any configured ordinary prediction routes over that representation.
  *
- * Each selected observation is represented from signal identity + scalar value + relative time.
- * The graph deliberately stops before learned projection and attention. The successful playpen
- * attention experiments normalized values and learned the input/key/value projections and latent
- * query from a prediction objective.
+ * Event-conditioned QKV prediction uses [TransitionPredictionProcessingGraph] instead of hiding
+ * transition inference inside a trainer.
  */
 class SensingProcessingGraph(
-    private val sampleStore: SampleStore,
-    private val signalEmbedder: Embedder<SignalId> = SignalIdentityEmbedder(),
-    private val historyAges: List<Duration> = DEFAULT_HISTORY_AGES,
+    sampleStore: SampleStore,
+    signalEmbedder: Embedder<SignalId> = SignalIdentityEmbedder(),
+    historyAges: List<Duration> = DEFAULT_HISTORY_AGES,
+    models: List<Model> = emptyList(),
+    private val predictionDecoders: List<PredictionDecoder<*>> = emptyList(),
+    private val predictionRouteFactories: List<PredictionRouteFactory> = emptyList(),
 ) : ProcessingGraph {
+    private val sensoryEncoder = SensoryRepresentationEncoder(sampleStore, signalEmbedder, historyAges)
+    private val modelComponents = models.toList()
+    private val discoveredRoutes = linkedMapOf<SignalId, PredictionRoute>()
+
     var latestRepresentation: Representation? = null
         private set
 
-    init {
-        require(historyAges.isNotEmpty()) { "history ages must not be empty" }
-        require(historyAges.all { !it.isNegative }) { "history ages must not be negative" }
-        require(historyAges.any(Duration::isZero)) { "history ages must include the current observation" }
-        require(maxHistoryAge > Duration.ZERO) { "history ages must include at least one positive duration" }
-    }
+    var latestPositions: List<SensoryPosition> = emptyList()
+        private set
+
+    private var latestExecutions: List<PredictionExecution> = emptyList()
 
     override fun sense(samples: List<Sample<*>>) {
         if (samples.isEmpty()) return
 
+        discoverPredictionRoutes(samples)
+
         val now = samples.maxOf { it.timestamp }
-        val history = sampleStore.get(now.minus(maxHistoryAge), now.plusNanos(1))
-        val observations = selectObservations(now, history)
-        if (observations.isEmpty()) return
-
-        latestRepresentation = Representation.from(observations.map(::encode))
-    }
-
-    private fun selectObservations(
-        now: Instant,
-        history: List<Sample<*>>,
-    ): List<SensoryObservation> = buildList {
-        history
-            .groupBy { it.signal.id }
-            .toSortedMap(compareBy(SignalId::value))
-            .forEach { (_, signalSamples) ->
-                val selected = linkedSetOf<Sample<*>>()
-                historyAges.forEach { age ->
-                    val target = now.minus(age)
-                    signalSamples.minByOrNull { sample -> distanceMillis(sample.timestamp, target) }?.let(selected::add)
-                }
-                selected.sortedBy { it.timestamp }.forEach { sample ->
-                    add(
-                        SensoryObservation(
-                            sample = sample,
-                            relativeTime = relativeTime(sample.timestamp, now),
-                        ),
-                    )
-                }
-            }
-    }
-
-    private fun relativeTime(
-        timestamp: Instant,
-        now: Instant,
-    ): Double =
-        Duration.between(now, timestamp).toMillis().toDouble() / maxHistoryAge.toMillis().toDouble()
-
-    private fun distanceMillis(
-        left: Instant,
-        right: Instant,
-    ): Long = abs(Duration.between(left, right).toMillis())
-
-    private fun encode(observation: SensoryObservation): Embedding {
-        val identity = signalEmbedder.embed(observation.sample.signal.id).toDoubleArray()
-        val value = scalarValue(observation.sample.value)
-        return Embedding.from(identity + doubleArrayOf(value, observation.relativeTime))
-    }
-
-    private fun scalarValue(value: Any?): Double =
-        when (value) {
-            is Number -> value.toDouble().also { require(it.isFinite()) { "numeric sample values must be finite" } }
-            is Boolean -> if (value) 1.0 else 0.0
-            else -> error(
-                "Default sensing graph currently supports Number and Boolean sample values, got " +
-                    (value?.let { it::class.simpleName } ?: "null"),
-            )
+        val frame = sensoryEncoder.frame(now)
+        if (frame == null) {
+            latestRepresentation = null
+            latestPositions = emptyList()
+            latestExecutions = emptyList()
+            return
         }
 
-    private val maxHistoryAge: Duration
-        get() = historyAges.maxOrNull() ?: Duration.ZERO
+        val representation = frame.representation
+        latestRepresentation = representation
+        latestPositions = frame.positions
+        latestExecutions = buildList {
+            if (predictionDecoders.isNotEmpty()) {
+                modelComponents
+                    .filter { it.supports(representation) }
+                    .forEach { model ->
+                        val output = model.forward(representation)
+                        predictionDecoders
+                            .filter { it.supports(output) }
+                            .forEach { decoder ->
+                                add(
+                                    PredictionExecution(
+                                        model = model,
+                                        decoder = decoder,
+                                        input = representation,
+                                        output = output,
+                                        prediction = decoder.decode(output),
+                                    ),
+                                )
+                            }
+                    }
+            }
 
-    private data class SensoryObservation(
-        val sample: Sample<*>,
-        val relativeTime: Double,
-    )
+            discoveredRoutes.values.forEach { route ->
+                if (!route.model.supports(representation)) return@forEach
+                val output = route.model.forward(representation)
+                if (!route.decoder.supports(output)) return@forEach
+                add(
+                    PredictionExecution(
+                        model = route.model,
+                        decoder = route.decoder,
+                        input = representation,
+                        output = output,
+                        prediction = route.decoder.decode(output),
+                    ),
+                )
+            }
+        }
+    }
+
+    override fun models(): List<Model> =
+        (modelComponents + discoveredRoutes.values.map { it.model }).distinctBy { System.identityHashCode(it) }
+
+    override fun predictionExecutions(): List<PredictionExecution> = latestExecutions.toList()
+
+    private fun discoverPredictionRoutes(samples: List<Sample<*>>) {
+        samples.forEach { sample ->
+            if (sample.signal.id in discoveredRoutes) return@forEach
+            val route = predictionRouteFactories.firstNotNullOfOrNull { it.create(sample) } ?: return@forEach
+            discoveredRoutes[sample.signal.id] = route
+        }
+    }
 
     companion object {
-        /** Generic history ages carried forward from the successful temporal relation experiments. */
-        val DEFAULT_HISTORY_AGES: List<Duration> =
-            listOf(5120L, 2560L, 1280L, 640L, 320L, 160L, 80L, 60L, 40L, 30L, 20L, 15L, 10L, 5L, 0L)
-                .map(Duration::ofSeconds)
+        val DEFAULT_HISTORY_AGES: List<Duration> = SensoryRepresentationEncoder.DEFAULT_HISTORY_AGES
     }
 }

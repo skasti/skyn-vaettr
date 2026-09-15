@@ -5,6 +5,10 @@ import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNotSame
+import kotlin.test.assertSame
+import no.skasti.skynvaettr.models.DoublePredictionRouteFactory
+import no.skasti.skynvaettr.models.OnlineKnnModel
 import no.skasti.skynvaettr.representation.SignalIdentityEmbedder
 import no.skasti.skynvaettr.signals.InMemorySampleStore
 import no.skasti.skynvaettr.signals.Sample
@@ -30,14 +34,17 @@ class SensingProcessingGraphTest {
 
         val representation = assertNotNull(graph.latestRepresentation)
         assertEquals(2, representation.positions)
-        assertEquals(SignalIdentityEmbedder().dimensions + 2, representation.dimensions)
+        assertEquals(SignalIdentityEmbedder().dimensions + 3, representation.dimensions)
 
-        val valueDimension = representation.dimensions - 2
-        val timeDimension = representation.dimensions - 1
+        val valueDimension = SignalIdentityEmbedder().dimensions
+        val timeDimension = valueDimension + 1
+        val eventDimension = valueDimension + 2
         assertEquals(20.0, representation[0][valueDimension])
         assertEquals(-1.0, representation[0][timeDimension])
+        assertEquals(0.0, representation[0][eventDimension])
         assertEquals(21.0, representation[1][valueDimension])
         assertEquals(0.0, representation[1][timeDimension])
+        assertEquals(0.0, representation[1][eventDimension])
     }
 
     @Test
@@ -56,7 +63,7 @@ class SensingProcessingGraphTest {
         graph.sense(listOf(current))
 
         val representation = assertNotNull(graph.latestRepresentation)
-        val timeDimension = representation.dimensions - 1
+        val timeDimension = SignalIdentityEmbedder().dimensions + 1
         assertEquals(-0.7, representation[0][timeDimension], absoluteTolerance = 1e-12)
         assertEquals(0.0, representation[1][timeDimension])
     }
@@ -76,7 +83,38 @@ class SensingProcessingGraphTest {
         graph.sense(listOf(sample))
 
         val representation = assertNotNull(graph.latestRepresentation)
-        val valueDimension = representation.dimensions - 2
+        val valueDimension = SignalIdentityEmbedder().dimensions
         assertEquals(1.0, representation[0][valueDimension])
+    }
+
+    @Test
+    fun `discovers independent prediction routes for observed double signals`() {
+        val store = InMemorySampleStore()
+        val graph = SensingProcessingGraph(
+            sampleStore = store,
+            historyAges = listOf(Duration.ofSeconds(5), Duration.ZERO),
+            predictionRouteFactories = listOf(DoublePredictionRouteFactory()),
+        )
+        val firstSignal = Signal<Double>("sensor.alpha")
+        val secondSignal = Signal<Double>("sensor.beta")
+        val samples = listOf(
+            Sample(firstSignal, 1.0, Instant.EPOCH),
+            Sample(secondSignal, 2.0, Instant.EPOCH),
+        )
+
+        store.append(samples)
+        graph.sense(samples)
+
+        val models = graph.models()
+        assertEquals(2, models.size)
+        assertEquals(true, models.all { it is OnlineKnnModel })
+        assertNotSame(models[0], models[1])
+
+        val executions = graph.predictionExecutions()
+        assertEquals(
+            setOf(firstSignal, secondSignal),
+            executions.map { it.prediction.signal }.toSet(),
+        )
+        assertSame(executions[0].input, executions[1].input)
     }
 }

@@ -44,6 +44,8 @@ jobs:
     permissions:
       actions: read
       contents: write
+      issues: write
+      pull-requests: write
     steps:
       - name: Download example reports
         uses: actions/download-artifact@v7
@@ -51,7 +53,7 @@ jobs:
           name: example-reports
           path: build/reports/examples
 
-      - name: Publish thermal example graphs and summary
+      - name: Publish example graphs and summary
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
@@ -61,12 +63,23 @@ jobs:
         run: |
           set -euo pipefail
 
-          report_dir="build/reports/examples/thermal-expectation"
-          summary="$report_dir/summary.md"
+          thermal_dir="build/reports/examples/thermal-expectation"
+          kitchen_dir="build/reports/examples/kitchen-light"
+          thermal_summary="$thermal_dir/summary.md"
+          kitchen_summary="$kitchen_dir/summary.md"
+          comment_marker='<!-- example-reports -->'
+          report_days=(1 3 5 10)
 
-          test -f "$summary"
-          test -f "$report_dir/day.png"
-          test -f "$report_dir/expectations.png"
+          test -f "$thermal_summary"
+          test -f "$thermal_dir/day.png"
+          test -f "$kitchen_summary"
+          test -f "$kitchen_dir/day.png"
+          for day in "${report_days[@]}"; do
+            test -f "$thermal_dir/attention-day-$day.png"
+            test -f "$thermal_dir/target-signal-day-$day.png"
+            test -f "$kitchen_dir/attention-day-$day.png"
+            test -f "$kitchen_dir/target-signal-day-$day.png"
+          done
 
           if ! gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$RESULTS_BRANCH" >/dev/null 2>&1; then
             gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
@@ -85,54 +98,57 @@ jobs:
             published=false
             for attempt in 1 2 3; do
               existing_sha=$(gh api "repos/$GITHUB_REPOSITORY/contents/$target?ref=$RESULTS_BRANCH" --jq '.sha' 2>/dev/null || true)
-
               if [ -n "$existing_sha" ]; then
-                jq -n \
-                  --rawfile content "$encoded_file" \
-                  --arg message "ci: update PR $PR_NUMBER $description" \
-                  --arg branch "$RESULTS_BRANCH" \
-                  --arg sha "$existing_sha" \
-                  '{message: $message, content: $content, branch: $branch, sha: $sha}' \
-                  > "$payload_file"
+                jq -n --rawfile content "$encoded_file" --arg message "ci: update PR $PR_NUMBER $description" --arg branch "$RESULTS_BRANCH" --arg sha "$existing_sha" \
+                  '{message: $message, content: $content, branch: $branch, sha: $sha}' > "$payload_file"
               else
-                jq -n \
-                  --rawfile content "$encoded_file" \
-                  --arg message "ci: publish PR $PR_NUMBER $description" \
-                  --arg branch "$RESULTS_BRANCH" \
-                  '{message: $message, content: $content, branch: $branch}' \
-                  > "$payload_file"
+                jq -n --rawfile content "$encoded_file" --arg message "ci: publish PR $PR_NUMBER $description" --arg branch "$RESULTS_BRANCH" \
+                  '{message: $message, content: $content, branch: $branch}' > "$payload_file"
               fi
-
               if gh api --method PUT "repos/$GITHUB_REPOSITORY/contents/$target" --input "$payload_file" >/dev/null 2>&1; then
                 published=true
                 break
               fi
-
-              echo "Graph publish raced with another update; retrying ($attempt/3)"
               sleep "$attempt"
             done
-
             rm -f "$encoded_file" "$payload_file"
-            if [ "$published" != true ]; then
-              echo "Failed to publish $target after 3 attempts" >&2
-              exit 1
-            fi
+            [ "$published" = true ] || exit 1
           }
 
-          publish_graph \
-            "$report_dir/day.png" \
-            "pr-$PR_NUMBER/examples/thermal-expectation/day.png" \
-            "thermal example graph"
+          publish_graph "$thermal_dir/day.png" "pr-$PR_NUMBER/examples/thermal-expectation/day.png" "thermal day 10 graph"
+          publish_graph "$kitchen_dir/day.png" "pr-$PR_NUMBER/examples/kitchen-light/day.png" "kitchen day 10 graph"
+          for day in "${report_days[@]}"; do
+            publish_graph "$thermal_dir/attention-day-$day.png" "pr-$PR_NUMBER/examples/thermal-expectation/attention-day-$day.png" "thermal attention day $day"
+            publish_graph "$thermal_dir/target-signal-day-$day.png" "pr-$PR_NUMBER/examples/thermal-expectation/target-signal-day-$day.png" "thermal target signal day $day"
+            publish_graph "$kitchen_dir/attention-day-$day.png" "pr-$PR_NUMBER/examples/kitchen-light/attention-day-$day.png" "kitchen attention day $day"
+            publish_graph "$kitchen_dir/target-signal-day-$day.png" "pr-$PR_NUMBER/examples/kitchen-light/target-signal-day-$day.png" "kitchen target signal day $day"
+          done
 
-          publish_graph \
-            "$report_dir/expectations.png" \
-            "pr-$PR_NUMBER/examples/thermal-expectation/expectations.png" \
-            "thermal expectation graph"
+          raw_base="https://raw.githubusercontent.com/$GITHUB_REPOSITORY/$RESULTS_BRANCH/pr-$PR_NUMBER/examples"
+          comment_file=$(mktemp)
+          {
+            printf '%s\n\n' "$comment_marker"
+            cat "$thermal_summary"
+            printf '\n### Thermal world — day 10 observations\n\n![Thermal world](%s/thermal-expectation/day.png?run=%s)\n' "$raw_base" "$GITHUB_RUN_ID"
+            for day in "${report_days[@]}"; do
+              printf '\n### Thermal attention — day %s\n\n![Thermal attention day %s](%s/thermal-expectation/attention-day-%s.png?run=%s)\n' "$day" "$day" "$raw_base" "$day" "$GITHUB_RUN_ID"
+              printf '\n### Thermal target-signal prediction — day %s\n\n![Thermal target signal day %s](%s/thermal-expectation/target-signal-day-%s.png?run=%s)\n' "$day" "$day" "$raw_base" "$day" "$GITHUB_RUN_ID"
+            done
+            printf '\n---\n\n'
+            cat "$kitchen_summary"
+            printf '\n### Kitchen day 10 observations\n\n![Kitchen dimmer and light](%s/kitchen-light/day.png?run=%s)\n' "$raw_base" "$GITHUB_RUN_ID"
+            for day in "${report_days[@]}"; do
+              printf '\n### Kitchen attention — day %s\n\n![Kitchen attention day %s](%s/kitchen-light/attention-day-%s.png?run=%s)\n' "$day" "$day" "$raw_base" "$day" "$GITHUB_RUN_ID"
+              printf '\n### Kitchen target-signal prediction — day %s\n\n![Kitchen target signal day %s](%s/kitchen-light/target-signal-day-%s.png?run=%s)\n' "$day" "$day" "$raw_base" "$day" "$GITHUB_RUN_ID"
+            done
+          } > "$comment_file"
 
-          cat "$summary" >> "$GITHUB_STEP_SUMMARY"
-          printf '\n![Thermal expectation example](https://raw.githubusercontent.com/%s/%s/pr-%s/examples/thermal-expectation/day.png?run=%s)\n' \
-            "$GITHUB_REPOSITORY" "$RESULTS_BRANCH" "$PR_NUMBER" "$GITHUB_RUN_ID" \
-            >> "$GITHUB_STEP_SUMMARY"
-          printf '\n![Illustrative expectation series](https://raw.githubusercontent.com/%s/%s/pr-%s/examples/thermal-expectation/expectations.png?run=%s)\n' \
-            "$GITHUB_REPOSITORY" "$RESULTS_BRANCH" "$PR_NUMBER" "$GITHUB_RUN_ID" \
-            >> "$GITHUB_STEP_SUMMARY"
+          gh api --paginate "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
+            --jq ".[] | select(.body | contains(\"$comment_marker\") or contains(\"<!-- thermal-expectation-report -->\")) | .id" \
+            | while read -r comment_id; do
+                [ -z "$comment_id" ] || gh api --method DELETE "repos/$GITHUB_REPOSITORY/issues/comments/$comment_id"
+              done
+
+          jq -Rs '{body: .}' "$comment_file" | gh api --method POST "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --input - >/dev/null
+          cat "$comment_file" >> "$GITHUB_STEP_SUMMARY"
+          rm -f "$comment_file"

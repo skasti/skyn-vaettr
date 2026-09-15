@@ -1,91 +1,123 @@
 # Predictions and Expectations
 
-This document defines the minimal prediction/expectation boundary currently promoted into Skynvættr core.
+This document defines the current prediction/expectation boundary in Skynvættr core and the active learning experiment.
 
-## Prediction
+## Current experiment: learn predictions before expectations
 
-`Prediction<T>` is a model-produced value for one `Signal<T>` together with the model's current confidence in that prediction.
+The thermal and kitchen examples currently stop at `Prediction`. They intentionally do **not** create `Expectation` instances while we validate whether a learned attention model can discover useful temporal relationships and predict the next meaningful transition.
 
-Confidence is normalized to `0.0..1.0`. It describes the model's own support for the prediction; it does **not** mean that the runtime has committed to believing it, and it is not necessarily a calibrated probability of correctness.
-
-Predictions deliberately have no creation time, mandatory target timestamp, or fixed forecast horizon. Timing, ordering and other temporal semantics belong to the model/runtime context around a prediction rather than to the value type itself.
-
-## Expectation gate
-
-A prediction may be considered by an expectation gate. The gate owns policy such as:
-
-- how much model confidence is needed before committing;
-- whether a new prediction should create an expectation;
-- whether a later prediction is compatible with an existing expectation;
-- whether a compatible prediction should refine the expected value, reinforce confidence, or both;
-- whether an incompatible prediction should supersede the existing expectation;
-- whether a prediction is sufficiently recent or otherwise eligible;
-- what utility, cost or reward should be associated with creating, maintaining, fulfilling or violating an expectation;
-- when an expectation stops being active and which result value should describe that outcome.
-
-Compatibility is intentionally policy-level rather than simple value equality. For example, a temperature prediction moving from `21.0` to `21.2` may refine the same expectation, while a binary state changing from `true` to `false` may represent an incompatible belief.
-
-The gate may also compare the current refined value with `expectationInitialValue`. If the belief has drifted too far from what was initially expected, policy may choose to supersede it rather than continually move the target. How much drift is acceptable, and any additional cost associated with superseding, remain policy decisions.
-
-These rules are deliberately not encoded in `Prediction` or `Expectation`.
-
-## Expectation
-
-`Expectation<T>` represents a persistent belief after the expectation gate has decided a model prediction is worth committing to.
-
-Unlike a `Prediction`, it is not a frozen snapshot of one model output. It records the belief state and stable reference points needed by core:
-
-- the `Signal<T>` the belief concerns;
-- `signalInitialValue`, the observed value of that same signal when the expectation was formed;
-- `expectationInitialValue`, the initially expected value, equal to `value` when the expectation is created;
-- `value`, the currently expected value;
-- when the expectation was first formed;
-- the current expectation confidence;
-- an optional `ExpectationResult` once the expectation is no longer active.
-
-Compatible later predictions may cause the gate to refine `value` and confidence while preserving `signalInitialValue`, `expectationInitialValue` and the original `formedAt`. This preserves both where reality started and what the belief originally committed to, which can later support visualization and policy-level evaluation without allowing gradual refinement to erase the original prediction.
-
-`ExpectationResult` contains an open-ended string `value` and the `timestamp` when the expectation stopped being active. Core deliberately does not define a fixed result vocabulary. A subsystem may use values such as `Fulfilled`, `Abandoned`, `Superseded` or something domain-specific without changing the core type.
-
-The lifecycle is therefore:
-
-```mermaid
-stateDiagram-v2
-    [*] --> Active: expectation formed
-    Active --> Active: compatible refinement
-    Active --> Result: subsystem records result
-    Result --> [*]
-```
-
-A null `result` means the expectation is still active. A non-null result closes its active interval at `result.timestamp`.
-
-Core deliberately does not provide a built-in `reinforcedBy(...)` operation because deciding compatibility and update semantics is gate/policy behavior.
-
-Cost, reward and other utility calculations are intentionally external. They depend on the subsystem, environment or policy evaluating the expectation rather than being intrinsic properties of the belief itself.
-
-## Current boundary
-
-The intended flow is:
+Expectation types, policies, results and replay infrastructure remain in core for later use; they are not removed by this experiment.
 
 ```mermaid
 flowchart LR
-    M[Model] -->|Prediction value + confidence| G[Expectation gate]
-    S[Current signal value] -->|signalInitialValue on creation| G
-    G -->|create| E[Expectation]
-    M -->|later prediction| G
-    G -->|compatible: refine value / confidence| E
-    G -->|incompatible or excessive drift: supersede| N[New expectation]
-    G -->|close lifecycle| R[ExpectationResult]
-    G -.->|compute utility externally| U[Policy / subsystem state]
+    S[Samples]
+    --> H[History selection]
+    --> T[SignalId tokenization]
+    --> E[Sensory encoding]
+    --> R[History Representation]
+
+    X[Observed meaningful transition]
+    --> EVT[Transition event token]
+    R --> RI[Model input]
+    EVT --> RI
+
+    RI --> CQ[Candidate signal identities]
+    CQ --> Q[Shared Q projection]
+    RI --> K[Shared K projection]
+    RI --> V[Shared V projection]
+    Q --> A[Candidate-conditioned attention]
+    K --> A
+    V --> A
+    A --> FF[Shared nonlinear readout]
+    FF --> O[Candidate logits + values]
+    O --> D[TransitionPredictionDecoder]
+    D --> P[Prediction]
+
+    P -. later .-> EP[ExpectationPolicy]
+    EP -. later .-> EX[Expectation]
 ```
 
-The stable reference points are:
+`SensoryRepresentationEncoder` owns history selection and sensory encoding. `TransitionPredictionProcessingGraph` owns transition detection, model inference and decoding. `TransitionPredictionTrainer` only supervises already-completed graph executions.
+
+## Representation and observed events
+
+Ordinary sensory positions are encoded as:
+
+`[signal identity embedding..., scalar value, relative time, event flag=0]`
+
+When a meaningful numeric transition triggers inference, the graph also appends an observed event token:
+
+`[signal identity embedding..., delta, relative time, event flag=1]`
+
+The event token tells the model **what just changed**. It contains no target-signal identity and therefore does not encode the answer to what should happen next.
+
+`Representation` itself remains a generic sequence of embeddings. Symbolic `SensoryPosition` metadata is kept alongside it only for diagnostics and report labels.
+
+## Horizon-free next-transition prediction
+
+`Prediction<T>` deliberately has no mandatory target timestamp or configured `+N` horizon.
+
+After a meaningful transition, the graph predicts the next meaningful numeric transition. When that later transition is observed, its signal identity and value supervise the earlier graph execution.
+
+```mermaid
+sequenceDiagram
+    participant G as Processing graph
+    participant M as Candidate attention model
+    participant P as Prediction
+    participant T as Trainer
+
+    G->>G: detect meaningful source transition
+    G->>M: history + observed source-event token
+    M->>M: score every observed signal as candidate
+    M->>G: candidate logits + candidate values
+    G->>P: choose highest-scoring candidate
+    G->>G: later meaningful transition
+    G->>T: observed target signal + value
+    T->>M: cross-entropy signal target + value target
+```
+
+The trainer owns neither the model, decoder nor transition detector. It trains the exact graph-owned model/input pair that produced the pending prediction.
+
+## Candidate-conditioned attention
+
+Each distinct signal identity present in the model input becomes one candidate query. All candidates share the same Q/K/V projections. K/V are computed from the complete sensory/event history. A shared nonlinear feed-forward readout over `[candidate query ; attended context]` produces one logit and one value for each candidate.
+
+Target signal identity is trained with cross-entropy over candidate logits. Numeric value loss is applied only to the candidate that actually transitions next.
+
+This replaced an earlier failed approach that regressed directly toward a signal-identity embedding with MSE; that objective could converge between signal identities and make nearest-neighbour decoding consistently choose one side.
+
+## Inspectability
+
+The examples report days 1, 3, 5 and 10.
+
+1. **Candidate-attention heatmap** — rows are candidate/query signals and columns are attended-to history signals. For example, `state.kitchen.light → state.kitchen.dimmer` shows how much dimmer history the light candidate uses while being scored.
+2. **Target-signal matrix** — normalized actual-vs-predicted next-transition identity.
+3. **Prediction metrics** — target-signal accuracy and value MAE.
+
+Attention is diagnostic evidence, not causal proof.
+
+## Current result
+
+The current candidate-attention implementation is mechanically working and CI is green, but the kitchen experiment still remains near a trivial **50% next-signal baseline** after ten days. The attention matrix also remains approximately 50/50 between dimmer and light rather than learning a useful cross-signal relationship.
+
+That is an experimental failure, not a reporting success. It suggests that the current per-observation attention/readout does not yet provide a strong enough inductive structure for learning the desired target↔source relation from this supervision alone.
+
+A likely next experiment is to move the attention boundary closer to **signal-level or event-level tokens** rather than asking one shallow attention layer to recover signal relationships from many individual historical sample positions.
+
+## Expectations remain a separate layer
+
+`Expectation<T>`, `ExpectationResult`, `ExpectationPolicy<T>`, `NumericExpectationPolicy`, `ExpectationTrainer` and replay infrastructure remain available in core.
+
+They represent a separate concern: deciding when a model-produced prediction is important and reliable enough to retain as a persistent belief.
 
 ```mermaid
 flowchart LR
-    SI[signalInitialValue\nObserved signal at formation] --> E[Expectation]
-    EI[expectationInitialValue\nInitial expected value] --> E
-    E --> V[value\nCurrent refinable expected value]
+    M[World model] --> P[Predictions]
+    P --> G[ExpectationPolicy]
+    G --> E[Expectation]
+    E --> R[Resolution / surprise]
+    R --> L[Optional replay / significance learning]
+    L --> M
 ```
 
-This PR intentionally stops here. Violation detection, surprise, experience records, fulfillment evaluation, utility/reward delivery, lifecycle policy and replay policy should be introduced only when experiments establish useful semantics for them.
+We are intentionally postponing that layer until the prediction/QKV path is sufficiently understood.
