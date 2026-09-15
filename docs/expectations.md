@@ -8,16 +8,25 @@ The thermal and kitchen examples currently stop at `Prediction`. They intentiona
 
 Expectation types, policies, results and replay infrastructure remain in core for later use; they are not removed by this experiment.
 
+The active example path is deliberately explicit in code:
+
 ```mermaid
 flowchart LR
-    S[Samples / history] --> R[Representation]
-    R --> A[Learned Q/K/V attention model]
-    A --> O[Latent transition representation]
-    O --> D[TransitionPredictionDecoder]
-    D --> P[Prediction]
-    P -. later .-> E[ExpectationPolicy]
-    E -. later .-> X[Expectation]
+    S[Samples]
+    --> H[History selection]
+    --> T[SignalId tokenization]
+    --> E[Token + sensory encoding]
+    --> R[Representation]
+    --> A[Event-conditioned Q/K/V attention]
+    --> O[Latent transition representation]
+    --> D[TransitionPredictionDecoder]
+    --> P[Prediction]
+
+    P -. later .-> EP[ExpectationPolicy]
+    EP -. later .-> X[Expectation]
 ```
+
+`SensoryRepresentationEncoder` owns history selection and sensory encoding. `SignalIdentityEmbedder` performs the signal-id tokenization/identity encoding inside that stage. `TransitionPredictionProcessingGraph` owns transition detection, the learned attention model and the decoder, and therefore owns the complete inference path. `TransitionPredictionTrainer` only supervises already-completed graph executions.
 
 ## Representation and signal identity
 
@@ -29,42 +38,48 @@ Diagnostic metadata (`SensoryPosition`) is kept alongside the representation onl
 
 ```mermaid
 flowchart LR
-    I[SignalId + value + timestamp] --> E[Encoded sensory embedding]
-    E --> R[Representation]
-    R --> M[Learned model]
-    M --> O[Latent output]
-    O --> D[Decoder]
-    D --> P[Prediction signal + value + confidence]
+    ID[SignalId]
+    --> TOK[SignalTokenizer]
+    --> TE[TokenEncoder]
+    --> SI[Signal identity embedding]
 
-    I -. diagnostics only .-> H[Attention report labels]
+    V[Scalar value] --> E[Encoded sensory position]
+    RT[Actual relative time] --> E
+    SI --> E
+    E --> R[Representation]
+
+    ID -. diagnostics only .-> H[Attention report labels]
 ```
 
 ## Horizon-free next-transition prediction
 
 `Prediction<T>` deliberately has no mandatory target timestamp or configured `+N` horizon.
 
-The active self-supervised objective is event-conditioned: after a meaningful transition, the model predicts the next meaningful numeric transition. When that later transition is actually observed, its signal identity and value become the training target for the earlier model input.
+The active self-supervised objective is event-conditioned: after a meaningful transition, the graph predicts the next meaningful numeric transition. When that later transition is actually observed, its signal identity and value become the training target for the earlier graph execution.
 
 ```mermaid
 sequenceDiagram
-    participant S as source signal
-    participant M as attention model
-    participant P as pending prediction
-    participant T as later target signal
+    participant G as Processing graph
+    participant M as QKV model
+    participant P as Prediction
+    participant T as Trainer
 
-    S->>S: meaningful transition
-    S->>M: current sensory Representation
-    M->>P: Prediction(signal, value, confidence)
-    T->>T: later meaningful transition
-    T->>P: observed target signal + value
-    P->>M: train previous input toward observed transition
+    G->>G: detect meaningful source transition
+    G->>M: query = source event, K/V = sensory history
+    M->>G: latent transition output
+    G->>P: decode target signal + value
+    G->>G: later meaningful transition
+    G->>T: completed new transition execution
+    T->>M: train previous exact input toward observed transition
 ```
+
+The trainer does not own the model, decoder or transition detector. It trains the exact graph-owned model/input pair that produced the pending prediction.
 
 This differs from the earlier next-sense-cycle objective, which accidentally behaved like a hidden polling-interval horizon and overrepresented plateaus.
 
 ## Meaningful transitions
 
-`NumericTransitionDetector` is the current generic baseline. It measures accumulated movement from the last accepted transition anchor rather than requiring one large sample-to-sample jump.
+`NumericTransitionEventDetector` is the current runtime baseline. It measures accumulated movement from the last accepted transition anchor rather than requiring one large sample-to-sample jump.
 
 A discrete dimmer change may therefore transition immediately, while many small thermal movements can accumulate into a transition.
 
@@ -83,17 +98,18 @@ The current range-fraction threshold is an experimental baseline, not intended a
 
 `LearnedAttentionTransitionModel` is intentionally smaller than a Transformer. It uses:
 
-- a learned global query representing “what meaningful transition happens next?”;
-- learned key projections for every sensory position;
-- learned value projections for every sensory position;
+- a query projected from the meaningful source-transition position;
+- learned key projections for every sensory-history position;
+- learned value projections for every sensory-history position;
 - scaled dot-product attention;
 - a learned output head for latent signal identity and numeric value.
 
 ```mermaid
 flowchart LR
+    X[Source transition embedding] --> Q[Learned Q projection]
     R[History Representation] --> K[Learned K projection]
     R --> V[Learned V projection]
-    Q[Learned next-transition query] --> A[Scaled dot-product attention]
+    Q --> A[Scaled dot-product attention]
     K --> A
     V --> A
     A --> C[Context]
@@ -101,7 +117,7 @@ flowchart LR
     C --> N[Numeric value]
 ```
 
-This is an inspectable Q/K/V baseline rather than the final model architecture. A later model may use context-dependent queries, multiple heads, shared backbones or longer-lived memory.
+This is an inspectable Q/K/V baseline rather than the final model architecture. A later model may use multiple heads, shared backbones or longer-lived memory.
 
 ## Decoding target signal identity
 
