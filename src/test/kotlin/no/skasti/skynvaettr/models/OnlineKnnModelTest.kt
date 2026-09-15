@@ -43,4 +43,15 @@ class OnlineKnnModelTest {
         val prediction = model.forward(longHistory)
         assertEquals(4.0, prediction[0][0], absoluteTolerance = 1e-9)
     }
+
+    @Test
+    fun `fractional training weights affect neighbour contribution`() {
+        val model = OnlineKnnModel(neighbours = 2)
+        val input = Representation.of(Embedding.of(1.0, 0.0))
+
+        model.train(input, Representation.of(Embedding.of(0.0)), weight = 0.1)
+        model.train(input, Representation.of(Embedding.of(10.0)), weight = 0.9)
+
+        assertEquals(9.0, model.forward(input)[0][0], absoluteTolerance = 1e-9)
+    }
 }
