@@ -17,24 +17,31 @@ flowchart LR
     --> T[SignalId tokenization]
     --> E[Token + sensory encoding]
     --> R[Representation]
-    --> A[Self-attention Q/K/V]
-    --> C[Contextualized positions]
-    --> PH[Transition head]
-    --> O[Latent transition representation]
-    --> D[TransitionPredictionDecoder]
-    --> P[Prediction]
+
+    R --> CQ[Candidate signal queries]
+    R --> K[History K projection]
+    R --> V[History V projection]
+    CQ --> Q[Shared Q projection]
+
+    Q --> A[Candidate-conditioned attention]
+    K --> A
+    V --> A
+    A --> H1[Shared candidate score/value head]
+    H1 --> O[Ranked candidate outputs]
+    O --> D[TransitionPredictionDecoder]
+    D --> P[Prediction]
 
     P -. later .-> EP[ExpectationPolicy]
     EP -. later .-> X[Expectation]
 ```
 
-`SensoryRepresentationEncoder` owns history selection and sensory encoding. `SignalIdentityEmbedder` performs the signal-id tokenization/identity encoding inside that stage. `TransitionPredictionProcessingGraph` owns transition detection, the learned attention model and the decoder, and therefore owns the complete inference path. `TransitionPredictionTrainer` only supervises already-completed graph executions.
+`SensoryRepresentationEncoder` owns history selection and sensory encoding. `SignalIdentityEmbedder` performs signal-id tokenization/identity encoding inside that stage. `TransitionPredictionProcessingGraph` owns transition detection, the learned attention model and the decoder, and therefore owns the complete inference path. `TransitionPredictionTrainer` only supervises already-completed graph executions.
 
 ## Representation and signal identity
 
 Each sensory position is encoded from signal identity, scalar value and actual relative time. `Representation` itself remains a generic sequence of embeddings and does not carry symbolic `SignalId` fields.
 
-The signal identity embedding is nevertheless part of the numeric representation seen by the model. This allows learned model output to contain a latent signal identity that can later be decoded back to a known signal.
+The signal identity embedding is nevertheless part of the numeric representation seen by the model. The current transition model extracts the distinct signal-identity embeddings already present in the sensory representation and uses each as one candidate query. It does not receive a configured list of domain relationships.
 
 Diagnostic metadata (`SensoryPosition`) is kept alongside the representation only so reports can label attention weights with the original signal and timestamp. Prediction decoding does not use that metadata to choose a target signal.
 
@@ -57,23 +64,24 @@ flowchart LR
 
 `Prediction<T>` deliberately has no mandatory target timestamp or configured `+N` horizon.
 
-The active self-supervised objective is event-conditioned only in **when inference runs**: after a meaningful transition, the graph asks the model to predict the next meaningful numeric transition. The transition detector does not create a special query token. The model instead self-attends over the complete sensory history representation. When a later meaningful transition is observed, its signal identity and value become the training target for the earlier graph execution.
+The active self-supervised objective is event-conditioned only in **when inference runs**: after a meaningful transition, the graph asks the model to predict the next meaningful numeric transition. The transition detector does not specify which signal should follow. Every distinct numeric signal present in the sensory representation is scored as a candidate. When a later meaningful transition is observed, its signal identity and value become the training target for the earlier graph execution.
 
 ```mermaid
 sequenceDiagram
     participant G as Processing graph
-    participant M as Self-attention model
+    participant M as Candidate attention model
     participant P as Prediction
     participant T as Trainer
 
     G->>G: detect meaningful transition
     G->>M: complete sensory Representation
-    M->>M: every position Q attends to all K/V positions
-    M->>G: latent transition output
-    G->>P: decode target signal + value
+    M->>M: build one query per candidate signal
+    M->>M: each candidate attends over shared history K/V
+    M->>G: candidate logits + candidate values
+    G->>P: choose highest-scoring signal candidate
     G->>G: later meaningful transition
     G->>T: completed new transition execution
-    T->>M: train previous exact input toward observed transition
+    T->>M: cross-entropy target signal + value target
 ```
 
 The trainer does not own the model, decoder or transition detector. It trains the exact graph-owned model/input pair that produced the pending prediction.
@@ -97,35 +105,40 @@ flowchart LR
 
 The current range-fraction threshold is an experimental baseline, not intended as the final salience mechanism.
 
-## Learned self-attention baseline
+## Learned candidate-conditioned attention baseline
 
-`LearnedAttentionTransitionModel` is intentionally smaller than a Transformer. Every sensory position is projected independently to Q, K and V. Scaled dot-product self-attention then contextualizes every position against every other position. A simple mean-pooling baseline combines those contextualized positions before a learned transition head emits latent target-signal identity and numeric value.
+`LearnedAttentionTransitionModel` is intentionally smaller than a Transformer. Each distinct signal identity in the current sensory representation becomes one candidate query. All candidates share the same learned Q projection and the same score/value heads. K/V are projected from the complete history representation.
 
 ```mermaid
 flowchart LR
-    R[History Representation] --> Q[Learned Q projections]
-    R --> K[Learned K projections]
-    R --> V[Learned V projections]
-    Q --> A[Scaled dot-product self-attention]
-    K --> A
-    V --> A
-    A --> C[Contextualized positions]
-    C --> P[Mean pool]
-    P --> S[Latent target signal identity]
-    P --> N[Numeric value]
+    C1[Candidate: light] --> Q1[Shared Q]
+    C2[Candidate: dimmer] --> Q2[Shared Q]
+    R[History Representation] --> K[Shared K]
+    R --> V[Shared V]
+
+    Q1 --> A1[Attention]
+    Q2 --> A2[Attention]
+    K --> A1
+    K --> A2
+    V --> A1
+    V --> A2
+
+    A1 --> S1[score light + value]
+    A2 --> S2[score dimmer + value]
+    S1 --> SM[Softmax over candidate scores]
+    S2 --> SM
+    SM --> P[Next-signal Prediction]
 ```
 
-All contextualized positions contribute to the prediction loss. Gradients therefore train every attention row, making relationships such as `state.kitchen.light` querying `state.kitchen.dimmer` inspectable and learnable rather than leaving non-source query rows unused.
+Target signal identity is trained with cross-entropy over the candidate logits. Numeric value loss is applied only to the actually observed target candidate. This avoids the previous failure mode where MSE regression toward signal embeddings could converge to a point between two signal identities and nearest-neighbour decoding would consistently choose one arbitrary side.
 
-This is an inspectable Q/K/V baseline rather than the final model architecture. A later model may use multiple heads, learned pooling/readout tokens, residual blocks or longer-lived memory.
+Because each candidate has its own query row, reports can directly inspect whether a candidate such as `state.kitchen.light` learns to attend to history from `state.kitchen.dimmer`.
 
 ## Decoding target signal identity
 
-`TransitionPredictionDecoder` observes which numeric signals currently exist, but does not decide the target signal from input metadata.
+Each model output position carries the candidate signal identity that was queried, plus its learned next-signal logit, candidate-specific value and experience confidence. `TransitionPredictionDecoder` maps those candidate identities back to known numeric signals and chooses the highest-scoring candidate.
 
-The model output contains a latent signal-identity vector. The decoder matches that vector against embeddings of known signals and returns the nearest signal together with decoded value and confidence.
-
-That means the learner must actually discover that a context such as a dimmer transition should map to `state.kitchen.light`; the decoder cannot obtain that answer from report metadata.
+The decoder therefore does not infer the relationship from diagnostic metadata. The learned part is the score assigned to each candidate from its candidate-conditioned attention context.
 
 ## Inspectability
 
@@ -133,10 +146,10 @@ The examples report days 1, 3, 5 and 10 so learning can be inspected over time.
 
 Two diagnostics are produced per snapshot:
 
-1. **Self-attention relationship heatmap** — rows are query signals and columns are attended-to signals. Each query-position attention row is normalized by the model and rows are then averaged by query signal, so the report can directly show e.g. `state.kitchen.light → state.kitchen.dimmer`.
+1. **Candidate-attention relationship heatmap** — rows are candidate/query signals and columns are attended-to history signals, so the report can directly show e.g. `state.kitchen.light → state.kitchen.dimmer`.
 2. **Target-signal matrix** — normalized actual-vs-predicted next-transition signal identity.
 
-Attention is not treated as proof of causality. It tells us what the model weighted while making a prediction; prediction accuracy and later ablation experiments provide stronger evidence that a relationship is actually being used.
+Attention is not treated as proof of causality. It tells us what the model weighted while scoring a candidate; prediction accuracy and later ablation experiments provide stronger evidence that a relationship is actually being used.
 
 ## Expectations remain a separate layer
 
