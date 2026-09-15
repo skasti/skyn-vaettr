@@ -46,27 +46,62 @@ flowchart LR
 
 Each target has separate model state/output semantics while every predictor receives the same complete sensory representation, so cross-signal relationships remain learnable.
 
-## Observation-driven learning
+## Adaptive multi-objective self-supervision
 
-Model learning does not depend on an expectation first being formed.
+Model learning does not depend on an expectation first being formed, and no single self-supervised objective owns a signal permanently.
 
-`ObservationTrainer` retains each trainable prediction execution from a completed sense cycle. When the same signal is observed in a later cycle, that observed value becomes a self-supervised target for the exact model and input `Representation` that produced the earlier prediction.
+The current numeric baseline runs two objectives in parallel:
+
+- `ObservationTrainer` learns from ordinary continuous change between observations. Exact plateaus are skipped because persistence already predicts them perfectly and they otherwise overwhelm sparse dynamics.
+- `TransitionTrainer` detects meaningful accumulated numeric transitions. A transition on any signal captures the current graph context; when a target signal later transitions, that earlier context is trained toward the new target value. This allows experiences such as `dimmer change -> later light change` without configuring either signal as a cause or target.
 
 ```mermaid
 flowchart LR
-    O1[Observed state] --> G[Processing graph]
+    S[Samples / history] --> G[Processing graph]
     G --> R[Representation]
     R --> M[Trainable model]
     M --> P[Prediction]
-    G --> X[Prediction execution]
-    X --> OT[ObservationTrainer]
-    O2[Later observed state] --> OT
-    OT -->|observed target| M
+
+    G --> C[Continuous objective]
+    G --> T[Transition objective]
+    S --> C
+    S --> T
+
+    C --> W[Adaptive objective weights]
+    T --> W
+    W --> M
 ```
 
-There is no configured `+1`, `+5`, or `+10` minute target. The interval is the actual elapsed time between observations. Temporal structure remains part of the graph-produced representation rather than being encoded as a fixed forecast horizon.
+`AdaptiveObjectiveWeights` evaluates each objective relative to a no-change persistence baseline. Long plateaus therefore do not make an objective look useful merely because predicting no change is easy. When a meaningful target change occurs, an objective receives positive skill only if its prediction improves on persistence.
 
-This continuous self-supervised path is the default bootstrap mechanism for learning world dynamics. It also provides the dense training signal needed by future learned sequence models, including learnable Q/K/V projections and attention.
+Weights remain soft and bounded away from zero. This is deliberate: the system does not perform a permanent hand-off from one learning regime to another. A signal may be mostly continuous in one context and transition-dominated in another, and both objectives can remain useful.
+
+The current weighting state is tracked per signal. Context-local routing and learned objective selection are possible future refinements once experiments justify the added complexity.
+
+## Transition detection
+
+`NumericTransitionDetector` measures movement from the last accepted transition anchor rather than only the immediately preceding sample.
+
+This means a discrete signal such as a dimmer may transition immediately from `0.2 -> 0.8`, while a thermal signal can accumulate many small changes until they together cross the same relative threshold.
+
+```mermaid
+flowchart LR
+    A[Anchor value] --> B[small change]
+    B --> C[small change]
+    C --> D{accumulated change meaningful?}
+    D -->|no| B
+    D -->|yes| E[Transition event / new anchor]
+```
+
+The detector is a generic numeric baseline, not a claim that a fixed range fraction is the final notion of salience. Learned noise/change models may replace it later.
+
+## Why this is not a fixed next-step horizon
+
+The earlier `ObservationTrainer` version trained every execution against the value seen in the next sense cycle. In a five-minute simulation this accidentally behaved like a hidden `+5 minute` target and heavily overrepresented unchanged plateaus.
+
+The continuous objective now ignores exact plateaus, while the transition objective waits for an actual meaningful state change. Transition learning is therefore event-conditioned rather than tied to the runtime polling interval.
+
+The current per-signal scalar model still predicts values rather than a full general transition event. A future transition head may additionally predict which signal transitions next and an elapsed-time distribution.
 
 ## Expectation policy
 
@@ -99,14 +134,16 @@ stateDiagram-v2
 
 ## Expectations as additional learning signal
 
-Expectations are no longer a prerequisite for training, but resolved expectations remain useful experiences.
+Expectations are not a prerequisite for training, but resolved expectations remain useful experiences.
 
 `ExpectationTrainer<T>` discovers the exact graph-owned model execution that produced a committed prediction. When the expectation resolves, it records an `ExpectationExperience<T>` and may reinforce/replay that experience with priority based on fulfillment, violation, surprise, or another policy-defined measure.
 
 ```mermaid
 flowchart LR
-    O[Observations] --> L[ObservationTrainer]
-    L --> M[World model]
+    O[Observations] --> C[Continuous objective]
+    O --> T[Transition objective]
+    C --> M[World model]
+    T --> M
     M --> P[Predictions]
     P --> E[Expectation policy]
     E --> X[Expectation]
@@ -117,14 +154,16 @@ flowchart LR
 
 This separates two concerns:
 
-- ordinary observations teach the model how the world behaves;
+- ordinary observations and transitions teach the model how the world behaves;
 - expectations record what the entity believed and provide an additional significance/surprise signal when those beliefs resolve.
 
 ## Current numeric baseline
 
 `OnlineKnnModel` is a dependency-free baseline `TrainableModel`. It compares complete ordered representation sequences instead of mean-pooling them, preserving signal/value/time bindings and observation order during nearest-neighbour lookup.
 
-This remains a baseline, not the intended final sequence architecture. Core already contains a `ScaledDotProductAttention` primitive, while learned Q/K/V projections and richer trainable attention models remain follow-up work.
+Training examples retain real fractional weights. Objective weighting therefore changes neighbour contribution directly rather than being approximated by duplicated examples.
+
+This remains a baseline, not the intended final sequence architecture. Core already contains a `ScaledDotProductAttention` primitive, while learned Q/K/V projections and richer trainable attention models remain follow-up work. The multi-objective training boundary is intended to provide useful supervision for such a shared representation/attention backbone later.
 
 `NumericPredictionDecoder` assigns model output to a concrete numeric signal. The thermal and kitchen examples configure only the generic `DoublePredictionRouteFactory`; neither scenario declares its signals as prediction targets.
 
@@ -142,11 +181,15 @@ flowchart LR
     P --> EP[ExpectationPolicy]
     EP --> E[Expectation]
 
-    S --> OT[ObservationTrainer]
-    OT --> M
+    S --> C[ObservationTrainer]
+    S --> T[TransitionTrainer]
+    C --> W[AdaptiveObjectiveWeights]
+    T --> W
+    W --> M
+
     E --> X[Resolved Experience]
     X --> ET[ExpectationTrainer / replay]
     ET --> M
 ```
 
-Automatic target discovery currently covers `Double` signals. General graph ports, scheduling, shared-backbone/multi-head learning, learned attention/QKV, non-Double decoder factories and richer expectation refinement remain experiment-driven follow-up work.
+Automatic target discovery and the current adaptive objectives currently cover `Double` signals. General graph ports, scheduling, shared-backbone/multi-head learning, learned attention/QKV, non-Double decoder factories, context-local objective routing, general next-transition heads and richer expectation refinement remain experiment-driven follow-up work.
