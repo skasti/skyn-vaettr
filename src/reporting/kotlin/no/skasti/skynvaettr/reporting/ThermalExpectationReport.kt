@@ -20,7 +20,8 @@ object ThermalExpectationReport {
         val vaettr = Vaettr()
         val world = ThermalExpectationScenario()
         val duration = Duration.ofDays(1)
-        val reportEnd = Instant.EPOCH.plus(duration)
+        val reportStart = Instant.EPOCH
+        val reportEnd = reportStart.plus(duration)
 
         world.simulate(
             duration = duration,
@@ -29,11 +30,7 @@ object ThermalExpectationReport {
             vaettr.sense(samples)
         }
 
-        val samples = vaettr.sampleStore.get(
-            Instant.EPOCH,
-            reportEnd.plusNanos(1),
-        )
-
+        val samples = vaettr.sampleStore.get(reportStart, reportEnd.plusNanos(1))
         val renderer = SampleChartRenderer()
         val worldSeries = listOf(
             SampleChartRenderer.Series(world.outdoorTemperature.id, "Outdoor temperature"),
@@ -48,13 +45,17 @@ object ThermalExpectationReport {
             output = reportDir.resolve("day.png"),
         )
 
-        val expectationSeries = illustrativeExpectations(samples, world, reportEnd)
+        val expectations = illustrativeExpectations(samples, world)
         renderer.render(
             title = "Thermal expectation example — illustrative expectations",
             yAxisTitle = "Temperature (°C)",
             samples = samples,
             series = worldSeries,
-            overlays = expectationSeries,
+            overlays = ExpectationChartSupport.overlays(
+                expectations = expectations,
+                windowStart = reportStart,
+                windowEnd = reportEnd,
+            ),
             output = reportDir.resolve("expectations.png"),
         )
 
@@ -68,17 +69,15 @@ object ThermalExpectationReport {
             retaining 90% of the remaining outdoor/indoor delta after one hour by default.
 
             `day.png` shows only world observations. `expectations.png` adds three **illustrative** expectations for
-            `sensor.indoor.temperature` as separate series. They are not produced by a learned model; they exist to make
-            the expectation representation inspectable while the model/gate behavior is still experimental.
+            `sensor.indoor.temperature`. They are not produced by a learned model.
 
-            Each expectation series begins at `formedAt` and remains visible while the expectation is active. A result
-            closes the series at `ExpectationResult.timestamp`; an expectation without a result remains visible through
-            the end of the report window. Completed series include the result value in the legend, for example
-            `Expectation 2 (Abandoned)`.
+            Expectation rendering is model-independent: each line starts at the signal's observed `signalInitialValue`
+            when the expectation is formed and progresses toward its current expected `value`. A resolved expectation ends
+            at `ExpectationResult.timestamp`; an unresolved expectation remains visible through the report window. Resolved
+            series include the result in the legend, for example `Expectation 2 (Abandoned)`.
 
-            The x-axis means **when the expectation was held**, not a fixed target timestamp or prediction horizon. Each
-            expectation keeps its original `signalInitialValue` and `expectationInitialValue` while its current `value`
-            may be refined.
+            If an expectation crosses the visible chart boundary, the line is clipped and interpolated at that boundary.
+            The x-axis therefore represents the period during which the belief is held, not a fixed prediction horizon.
             """.trimIndent() + "\n",
         )
     }
@@ -86,91 +85,43 @@ object ThermalExpectationReport {
     private fun illustrativeExpectations(
         samples: List<Sample<*>>,
         world: ThermalExpectationScenario,
-        reportEnd: Instant,
-    ): List<SampleChartRenderer.OverlaySeries> {
-        data class Refinement(
-            val afterFormation: Duration,
-            val offset: Double,
-        )
-
+    ): List<Expectation<Double>> {
         data class Example(
             val formedAt: Duration,
-            val initialOffset: Double,
-            val refinements: List<Refinement>,
+            val offset: Double,
             val result: Pair<Duration, String>? = null,
         )
 
-        val examples = listOf(
+        return listOf(
             Example(
                 formedAt = Duration.ofHours(4),
-                initialOffset = 1.6,
-                refinements = listOf(
-                    Refinement(Duration.ofMinutes(45), 1.9),
-                    Refinement(Duration.ofMinutes(90), 2.1),
-                ),
+                offset = 2.1,
                 result = Duration.ofHours(3) to "Fulfilled",
             ),
             Example(
                 formedAt = Duration.ofHours(11),
-                initialOffset = 1.0,
-                refinements = listOf(
-                    Refinement(Duration.ofMinutes(50), 0.8),
-                    Refinement(Duration.ofMinutes(100), 0.5),
-                ),
+                offset = 0.5,
                 result = Duration.ofHours(2) to "Abandoned",
             ),
             Example(
                 formedAt = Duration.ofHours(18),
-                initialOffset = -1.4,
-                refinements = listOf(
-                    Refinement(Duration.ofMinutes(40), -1.7),
-                    Refinement(Duration.ofMinutes(80), -1.9),
-                ),
+                offset = -1.9,
             ),
-        )
-
-        return examples.mapIndexed { index, example ->
+        ).mapIndexed { index, example ->
             val formedAt = Instant.EPOCH.plus(example.formedAt)
             val signalInitialValue = numericValueAt(samples, world.indoorTemperature.id.value, formedAt)
-            val initialExpectedValue = signalInitialValue + example.initialOffset
-            val result = example.result?.let { (afterFormation, value) ->
-                ExpectationResult(
-                    value = value,
-                    timestamp = formedAt.plus(afterFormation),
-                )
-            }
-            val initial = Expectation(
+            Expectation(
                 signal = world.indoorTemperature,
                 signalInitialValue = signalInitialValue,
-                value = initialExpectedValue,
+                value = signalInitialValue + example.offset,
                 formedAt = formedAt,
                 confidence = 0.65 + index * 0.1,
-                result = result,
-            )
-
-            val expectationResult = initial.result
-            var currentValue = initial.value
-            val points = buildList {
-                add(SampleChartRenderer.Point(initial.formedAt, currentValue))
-
-                example.refinements.forEach { refinement ->
-                    val timestamp = initial.formedAt.plus(refinement.afterFormation)
-                    if (expectationResult == null || !timestamp.isAfter(expectationResult.timestamp)) {
-                        currentValue = signalInitialValue + refinement.offset
-                        add(SampleChartRenderer.Point(timestamp, currentValue))
-                    }
-                }
-
-                val activeUntil = expectationResult?.timestamp ?: reportEnd
-                if (last().timestamp != activeUntil) {
-                    add(SampleChartRenderer.Point(activeUntil, currentValue))
-                }
-            }
-
-            val resultSuffix = expectationResult?.let { " (${it.value})" }.orEmpty()
-            SampleChartRenderer.OverlaySeries(
-                label = "Expectation ${index + 1}$resultSuffix",
-                points = points,
+                result = example.result?.let { (afterFormation, value) ->
+                    ExpectationResult(
+                        value = value,
+                        timestamp = formedAt.plus(afterFormation),
+                    )
+                },
             )
         }
     }
