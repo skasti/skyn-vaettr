@@ -1,6 +1,7 @@
 package no.skasti.skynvaettr.models
 
 import kotlin.math.exp
+import kotlin.math.min
 import kotlin.math.sqrt
 import no.skasti.skynvaettr.representation.Embedding
 import no.skasti.skynvaettr.representation.Representation
@@ -9,8 +10,12 @@ import no.skasti.skynvaettr.representation.Representation
  * Small dependency-free online model used as the first expectation-learning baseline.
  *
  * The model consumes the same [Representation] produced by the processing graph as inference and
- * training. Variable-length representations are mean-pooled across positions before nearest-neighbor
- * lookup, while the per-position embedding width must remain compatible with stored experience.
+ * training. Nearest-neighbour lookup compares the complete ordered representation with a
+ * dynamic-time-warping-style distance, preserving the binding between each position's signal
+ * identity, value and relative time instead of collapsing the sequence through mean pooling.
+ *
+ * This remains deliberately simpler than a learned attention/QKV model. Its purpose is to provide a
+ * sequence-aware baseline while keeping the model and expectation lifecycle independently replaceable.
  * Its latent output has one position: [predicted numeric value, confidence]. A decoder assigns that
  * output domain meaning.
  */
@@ -20,7 +25,7 @@ class OnlineKnnModel(
     private val confidenceExamples: Int = 12,
 ) : TrainableModel {
     private data class Example(
-        val input: DoubleArray,
+        val input: Representation,
         val target: Double,
     )
 
@@ -43,25 +48,24 @@ class OnlineKnnModel(
         require(supports(input)) {
             "Expected representation width $learnedInputDimensions, got ${input.dimensions}"
         }
-        val vector = pool(input)
         if (examples.isEmpty()) {
             return output(value = 0.0, confidence = 0.0)
         }
 
         val nearest = examples
-            .map { example -> example to squaredDistance(vector, example.input) }
+            .map { example -> example to representationDistance(input, example.input) }
             .sortedBy { it.second }
             .take(neighbours)
 
         var weightedTarget = 0.0
         var weightTotal = 0.0
-        nearest.forEach { (example, distanceSquared) ->
-            val weight = 1.0 / (sqrt(distanceSquared) + 1e-6)
+        nearest.forEach { (example, distance) ->
+            val weight = 1.0 / (distance + 1e-6)
             weightedTarget += example.target * weight
             weightTotal += weight
         }
 
-        val nearestDistance = sqrt(nearest.first().second)
+        val nearestDistance = nearest.first().second
         val experienceConfidence = (examples.size.toDouble() / confidenceExamples).coerceIn(0.0, 1.0)
         val localityConfidence = exp(-nearestDistance).coerceIn(0.0, 1.0)
         return output(
@@ -86,26 +90,56 @@ class OnlineKnnModel(
             "Expected representation width $learnedInputDimensions, got ${input.dimensions}"
         }
 
-        val vector = pool(input)
+        val storedInput = copyOf(input)
         val targetValue = target[0][0]
         val copies = weight.coerceAtMost(4.0).toInt().coerceAtLeast(1)
         repeat(copies) {
-            examples.addLast(Example(vector.copyOf(), targetValue))
+            examples.addLast(Example(storedInput, targetValue))
             while (examples.size > maxExamples) examples.removeFirst()
         }
     }
 
-    private fun pool(input: Representation): DoubleArray =
-        DoubleArray(input.dimensions) { dimension ->
-            input.sumOf { embedding -> embedding[dimension] } / input.positions.toDouble()
+    /**
+     * Sequence-aware distance supporting representations with different position counts.
+     *
+     * Dynamic time warping is useful here because early runtime history contains fewer positions than
+     * a fully populated history window. Matching is monotonic, so swapping otherwise identical
+     * positions no longer produces the same representation as it did under mean pooling.
+     */
+    private fun representationDistance(left: Representation, right: Representation): Double {
+        require(left.dimensions == right.dimensions)
+
+        var previous = DoubleArray(right.positions + 1) { Double.POSITIVE_INFINITY }
+        previous[0] = 0.0
+
+        for (leftIndex in 1..left.positions) {
+            val current = DoubleArray(right.positions + 1) { Double.POSITIVE_INFINITY }
+            for (rightIndex in 1..right.positions) {
+                val cost = embeddingDistance(left[leftIndex - 1], right[rightIndex - 1])
+                current[rightIndex] = cost + min(
+                    previous[rightIndex],
+                    min(current[rightIndex - 1], previous[rightIndex - 1]),
+                )
+            }
+            previous = current
         }
+
+        return previous[right.positions] / maxOf(left.positions, right.positions).toDouble()
+    }
+
+    private fun embeddingDistance(left: Embedding, right: Embedding): Double {
+        require(left.dimensions == right.dimensions)
+        val meanSquaredDifference =
+            (0 until left.dimensions).sumOf { dimension ->
+                val delta = left[dimension] - right[dimension]
+                delta * delta
+            } / left.dimensions.toDouble()
+        return sqrt(meanSquaredDifference)
+    }
+
+    private fun copyOf(input: Representation): Representation =
+        Representation.from(input.map { embedding -> Embedding.from(embedding.toDoubleArray()) })
 
     private fun output(value: Double, confidence: Double): Representation =
         Representation.of(Embedding.of(value, confidence))
-
-    private fun squaredDistance(left: DoubleArray, right: DoubleArray): Double =
-        left.indices.sumOf { index ->
-            val delta = left[index] - right[index]
-            delta * delta
-        }
 }
