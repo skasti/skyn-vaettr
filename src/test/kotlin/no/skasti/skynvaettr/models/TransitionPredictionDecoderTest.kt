@@ -10,7 +10,7 @@ import no.skasti.skynvaettr.signals.Signal
 
 class TransitionPredictionDecoderTest {
     @Test
-    fun `decodes target signal from latent identity output`() {
+    fun `decodes highest-scoring candidate signal`() {
         val embedder = SignalIdentityEmbedder()
         val decoder = TransitionPredictionDecoder(embedder)
         val dimmer = Signal<Double>("state.kitchen.dimmer")
@@ -18,15 +18,19 @@ class TransitionPredictionDecoderTest {
         decoder.observe(dimmer)
         decoder.observe(light)
 
-        val identity = embedder.embed(light.id).toDoubleArray()
-        val output = Representation.of(
-            Embedding.from(identity + doubleArrayOf(decoder.encodeValue(0.75), 1.0)),
+        val dimmerIdentity = embedder.embed(dimmer.id).toDoubleArray()
+        val lightIdentity = embedder.embed(light.id).toDoubleArray()
+        val output = Representation.from(
+            listOf(
+                Embedding.from(dimmerIdentity + doubleArrayOf(-1.0, decoder.encodeValue(0.2), 1.0)),
+                Embedding.from(lightIdentity + doubleArrayOf(2.0, decoder.encodeValue(0.75), 1.0)),
+            ),
         )
 
         val prediction = decoder.decode(output)
 
         assertEquals(light.id, prediction.signal.id)
         assertEquals(0.75, prediction.value, absoluteTolerance = 1e-9)
-        assertTrue(prediction.confidence > 0.99)
+        assertTrue(prediction.confidence > 0.9)
     }
 }
