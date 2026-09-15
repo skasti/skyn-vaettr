@@ -44,10 +44,7 @@ object ThermalExpectationReport {
 
         val finalDayStart = Instant.EPOCH.plus(Duration.ofDays(9))
         val finalDayEnd = Instant.EPOCH.plus(duration)
-        val finalDaySamples = learning.sampleStore.get(
-            finalDayStart,
-            finalDayEnd.plusNanos(1),
-        )
+        val finalDaySamples = learning.sampleStore.get(finalDayStart, finalDayEnd.plusNanos(1))
 
         renderer.render(
             title = "Thermal expectation example — day 10",
@@ -60,10 +57,7 @@ object ThermalExpectationReport {
         reportDays.forEach { day ->
             val reportStart = Instant.EPOCH.plus(Duration.ofDays(day - 1))
             val reportEnd = Instant.EPOCH.plus(Duration.ofDays(day))
-            val samples = learning.sampleStore.get(
-                reportStart,
-                reportEnd.plusNanos(1),
-            )
+            val samples = learning.sampleStore.get(reportStart, reportEnd.plusNanos(1))
             val expectations = checkNotNull(expectationSnapshots[day]) {
                 "Expected an expectation snapshot at the end of simulated day $day"
             }
@@ -73,11 +67,7 @@ object ThermalExpectationReport {
                 yAxisTitle = "Temperature (°C)",
                 samples = samples,
                 series = worldSeries,
-                overlays = expectationOverlays(
-                    expectations = expectations,
-                    reportStart = reportStart,
-                    reportEnd = reportEnd,
-                ),
+                overlays = expectationOverlays(expectations, reportStart, reportEnd),
                 output = reportDir.resolve("expectations-day-$day.png"),
             )
         }
@@ -98,19 +88,20 @@ object ThermalExpectationReport {
             Neither signal is configured as a prediction target. The graph discovers one numeric prediction route per
             observed compatible signal, while each predictor consumes the same complete sensory `Representation`.
 
+            Models learn continuously from ordinary observed transitions via `ObservationTrainer`; expectations are not
+            used to bootstrap learning. With stability expectations disabled, only sufficiently confident and material
+            decoded model predictions become persistent expectations.
+
             Learned expectation graphs are shown for days **1, 3, 5 and 10** so the default models' development can be
             inspected over time. Each graph contains only that day's observations and the expectations known at the end
             of that day; later outcomes are therefore not leaked into earlier snapshots.
 
-            For this run, **stability expectations are disabled**. Low-confidence models bootstrap with low-confidence
-            exploratory directional expectations derived from observed movement. Once models gain experience, confident
-            material decoded predictions can form normal expectations.
-
-            Model outputs remain horizon-free. `ExpectationTrainer` turns decoded predictions into persistent
-            expectations, lets the lifecycle policy resolve them from later observations, then trains on the value observed
-            at the actual resolution point. No +1/+5/+10 minute target exists in this example.
+            Model outputs remain horizon-free. Self-supervised targets use the value observed in a later sense cycle at
+            the interval that actually occurred; no configured +1/+5/+10 minute forecast horizon exists. Resolved
+            expectations additionally provide replay/surprise experience.
 
             After ten days: discovered numeric predictors: **${models.size}**.
+            Self-supervised observed transitions trained: **${learning.observationTrainer.trainingExampleCount}**.
             Resolved expectations: **$resolved** (`Fulfilled`: **$fulfilled**, `Violated`: **$violated**).
             Replayable expectation episodes: **${experiences.size}**.
             Model training examples currently retained across predictors: **$retainedTrainingExamples**.
