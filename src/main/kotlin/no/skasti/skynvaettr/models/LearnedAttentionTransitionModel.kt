@@ -151,7 +151,7 @@ class LearnedAttentionTransitionModel(
             val weightedAttentionGradient = state.weights[candidateIndex].indices.sumOf { keyIndex ->
                 state.weights[candidateIndex][keyIndex] * attentionGradient[keyIndex]
             }
-            val scoreGradient = DoubleArray(state.historyInputs.size) { keyIndex ->
+            val attentionScoreGradient = DoubleArray(state.historyInputs.size) { keyIndex ->
                 state.weights[candidateIndex][keyIndex] *
                     (attentionGradient[keyIndex] - weightedAttentionGradient)
             }
@@ -159,9 +159,9 @@ class LearnedAttentionTransitionModel(
             state.historyInputs.indices.forEach { keyIndex ->
                 for (dimension in 0 until attentionDimensions) {
                     queryGradients[candidateIndex][dimension] +=
-                        scoreGradient[keyIndex] * state.keys[keyIndex][dimension] * scale
+                        attentionScoreGradient[keyIndex] * state.keys[keyIndex][dimension] * scale
                     keyGradients[keyIndex][dimension] +=
-                        scoreGradient[keyIndex] * state.queries[candidateIndex][dimension] * scale
+                        attentionScoreGradient[keyIndex] * state.queries[candidateIndex][dimension] * scale
                     projectedValueGradients[keyIndex][dimension] +=
                         state.weights[candidateIndex][keyIndex] * contextGradients[candidateIndex][dimension]
                 }
@@ -282,14 +282,13 @@ class LearnedAttentionTransitionModel(
         }
     }
 
-    /** Sensory positions use signal identity followed by raw numeric value and relative time. */
+    /** Sensory positions place the scalar value immediately after the signal-identity embedding. */
     private fun normalizedInput(embedding: Embedding): DoubleArray =
         embedding.toDoubleArray().also { values ->
-            if (values.size >= 2) {
-                val valueIndex = values.lastIndex - 1
-                val value = values[valueIndex]
-                values[valueIndex] = if (value == 0.0) 0.0 else kotlin.math.sign(value) * ln1p(kotlin.math.abs(value))
-            }
+            val valueIndex = signalEmbeddingDimensions
+            val value = values[valueIndex]
+            values[valueIndex] =
+                if (value == 0.0) 0.0 else kotlin.math.sign(value) * ln1p(kotlin.math.abs(value))
         }
 
     private fun project(input: DoubleArray, matrix: Array<DoubleArray>): DoubleArray =
