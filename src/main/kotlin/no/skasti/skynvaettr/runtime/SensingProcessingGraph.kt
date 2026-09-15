@@ -15,6 +15,13 @@ import no.skasti.skynvaettr.signals.Sample
 import no.skasti.skynvaettr.signals.SampleStore
 import no.skasti.skynvaettr.signals.SignalId
 
+/** Metadata kept alongside one encoded sensory position for diagnostics and reporting. */
+data class SensoryPosition(
+    val signalId: SignalId,
+    val timestamp: Instant,
+    val relativeTime: Double,
+)
+
 /**
  * Initial default sensing graph based on the strongest generic sensory pattern explored in playpen.
  *
@@ -42,6 +49,9 @@ class SensingProcessingGraph(
     var latestRepresentation: Representation? = null
         private set
 
+    var latestPositions: List<SensoryPosition> = emptyList()
+        private set
+
     private var latestExecutions: List<PredictionExecution> = emptyList()
 
     init {
@@ -61,11 +71,19 @@ class SensingProcessingGraph(
         val observations = selectObservations(now, history)
         if (observations.isEmpty()) {
             latestExecutions = emptyList()
+            latestPositions = emptyList()
             return
         }
 
         val representation = Representation.from(observations.map(::encode))
         latestRepresentation = representation
+        latestPositions = observations.map { observation ->
+            SensoryPosition(
+                signalId = observation.sample.signal.id,
+                timestamp = observation.sample.timestamp,
+                relativeTime = observation.relativeTime,
+            )
+        }
         latestExecutions = buildList {
             modelComponents
                 .filter { it.supports(representation) }
