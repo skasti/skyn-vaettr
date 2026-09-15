@@ -18,14 +18,17 @@ class TransitionPredictionTrainerTest {
         val dimmer = Signal<Double>("state.kitchen.dimmer")
         val light = Signal<Double>("state.kitchen.light")
         val sampleStore = InMemorySampleStore()
-        val graph = SensingProcessingGraph(sampleStore)
         val embedder = SignalIdentityEmbedder()
         val decoder = TransitionPredictionDecoder(embedder)
         val model = LearnedAttentionTransitionModel(
             signalEmbeddingDimensions = embedder.dimensions,
             seed = 1,
         )
-        val trainer = TransitionPredictionTrainer(model, decoder)
+        val graph = SensingProcessingGraph(
+            sampleStore = sampleStore,
+            models = listOf(model),
+        )
+        val trainer = TransitionPredictionTrainer(decoder)
         val vaettr = Vaettr(sampleStore, graph, listOf(trainer))
 
         vaettr.sense(
