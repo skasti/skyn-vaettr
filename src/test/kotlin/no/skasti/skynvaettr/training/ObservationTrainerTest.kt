@@ -46,7 +46,7 @@ class ObservationTrainerTest {
         )
 
         assertEquals(listOf(0.8), model.targets)
-        assertEquals(1, trainer.trainingExampleCount)
+        assertEquals(1L, trainer.trainingExampleCount)
     }
 
     private class RecordingModel : TrainableModel {
