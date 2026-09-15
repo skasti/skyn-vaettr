@@ -65,8 +65,7 @@ object KitchenLightReport {
             "| $day | ${metrics.records} | ${percent(metrics.signalAccuracy)} | ${number(metrics.valueMae)} |"
         }
 
-        Files.writeString(
-            reportDir.resolve("summary.md"),
+        val summary = listOf(
             """
             ## Kitchen dimmer/light prediction example
 
@@ -88,7 +87,9 @@ object KitchenLightReport {
 
             | Day | Resolved predictions | Target-signal accuracy | Value MAE |
             | ---: | ---: | ---: | ---: |
-            $metricRows
+            """.trimIndent(),
+            metricRows,
+            """
 
             Total resolved transition predictions: **${records.size}**.
             Model training examples: **${learning.model.trainingExampleCount}**.
@@ -97,8 +98,10 @@ object KitchenLightReport {
             Attention is diagnostic evidence of what context the model uses, not proof of causality. The important kitchen
             test is whether attention increasingly concentrates on recent dimmer history before light transitions while the
             target-signal matrix moves toward correct `state.kitchen.light` predictions after dimmer changes.
-            """.trimIndent() + "\n",
-        )
+            """.trimIndent(),
+        ).joinToString("\n") + "\n"
+
+        Files.writeString(reportDir.resolve("summary.md"), summary)
     }
 
     private fun percent(value: Double): String = String.format(Locale.ROOT, "%.1f%%", value * 100.0)
