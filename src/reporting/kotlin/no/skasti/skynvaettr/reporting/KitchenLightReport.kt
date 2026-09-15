@@ -6,11 +6,8 @@ import java.time.Duration
 import java.time.Instant
 import java.util.Locale
 import no.skasti.skynvaettr.examples.KitchenLightLearning
-import no.skasti.skynvaettr.expectations.Expectation
-import no.skasti.skynvaettr.signals.SignalId
-import no.skasti.skynvaettr.training.LearningObjective
 
-/** Renders the dimmer/light temporal-relation example. */
+/** Renders prediction and attention diagnostics for the dimmer/light temporal-relation example. */
 object KitchenLightReport {
     private val reportDays = listOf(1L, 3L, 5L, 10L)
 
@@ -22,162 +19,90 @@ object KitchenLightReport {
         val learning = KitchenLightLearning()
         val world = learning.world
         val duration = Duration.ofDays(10)
-        val expectationSnapshots = mutableMapOf<Long, List<Expectation<Double>>>()
 
         world.simulate(
             duration = duration,
             step = Duration.ofMinutes(5),
-        ) { samples ->
-            learning.vaettr.sense(samples)
+            onSense = learning.vaettr::sense,
+        )
 
-            val timestamp = samples.firstOrNull()?.timestamp
-            reportDays.forEach { day ->
-                if (timestamp == Instant.EPOCH.plus(Duration.ofDays(day))) {
-                    expectationSnapshots[day] = learning.trainer.expectations.toList()
-                }
-            }
-        }
-
-        val renderer = SampleChartRenderer()
+        val sampleRenderer = SampleChartRenderer()
         val series = listOf(
             SampleChartRenderer.Series(world.dimmer.id, "Kitchen dimmer"),
             SampleChartRenderer.Series(world.light.id, "Kitchen light"),
         )
-
         val finalDayStart = Instant.EPOCH.plus(Duration.ofDays(9))
         val finalDayEnd = Instant.EPOCH.plus(duration)
-        val finalDaySamples = learning.sampleStore.get(
-            finalDayStart,
-            finalDayEnd.plusNanos(1),
-        )
-
-        renderer.render(
+        sampleRenderer.render(
             title = "Kitchen dimmer → light — day 10",
             yAxisTitle = "Level",
-            samples = finalDaySamples,
+            samples = learning.sampleStore.get(finalDayStart, finalDayEnd.plusNanos(1)),
             series = series,
             output = reportDir.resolve("day.png"),
         )
 
-        reportDays.forEach { day ->
-            val reportStart = Instant.EPOCH.plus(Duration.ofDays(day - 1))
-            val reportEnd = Instant.EPOCH.plus(Duration.ofDays(day))
-            val samples = learning.sampleStore.get(
-                reportStart,
-                reportEnd.plusNanos(1),
+        val signals = learning.decoder.knownSignals().map { it.id }.sortedBy { it.value }
+        val records = learning.predictionTrainer.records
+        val dayMetrics = reportDays.associateWith { day ->
+            val dayRecords = TransitionPredictionReportSupport.recordsForDay(records, day)
+            TransitionPredictionReportSupport.renderAttentionHeatmap(
+                title = "Kitchen attention by signal / age — day $day",
+                records = dayRecords,
+                signals = signals,
+                output = reportDir.resolve("attention-day-$day.png"),
             )
-            val expectations = checkNotNull(expectationSnapshots[day]) {
-                "Expected an expectation snapshot at the end of simulated day $day"
-            }
-
-            renderer.render(
-                title = "Kitchen expectations — day $day",
-                yAxisTitle = "Level",
-                samples = samples,
-                series = series,
-                overlays = expectationOverlays(
-                    expectations = expectations,
-                    reportStart = reportStart,
-                    reportEnd = reportEnd,
-                ),
-                output = reportDir.resolve("expectations-day-$day.png"),
+            TransitionPredictionReportSupport.renderTargetSignalHeatmap(
+                title = "Kitchen next-transition target signal — day $day",
+                records = dayRecords,
+                signals = signals,
+                output = reportDir.resolve("target-signal-day-$day.png"),
             )
+            TransitionPredictionReportSupport.metrics(dayRecords)
         }
 
-        val expectations = learning.trainer.expectations
-        val resolved = expectations.count { it.result != null }
-        val fulfilled = expectations.count { it.result?.value == "Fulfilled" }
-        val violated = expectations.count { it.result?.value == "Violated" }
-        val bySignal = expectations.groupingBy { it.signal.id.value }.eachCount().toSortedMap()
-        val resultsBySignal = expectations
-            .filter { it.result != null }
-            .groupBy { it.signal.id.value }
-            .toSortedMap()
-            .mapValues { (_, signalExpectations) ->
-                val signalFulfilled = signalExpectations.count { it.result?.value == "Fulfilled" }
-                val signalViolated = signalExpectations.count { it.result?.value == "Violated" }
-                "$signalFulfilled fulfilled / $signalViolated violated"
-            }
-        val routes = learning.graph.predictionExecutions().map { it.prediction.signal.id.value }.distinct().sorted()
-        val objectiveSummary = listOf(world.dimmer.id, world.light.id)
-            .joinToString(separator = "\n") { signalId ->
-                "- `${signalId.value}`: ${objectiveWeights(learning, signalId)}"
-            }
+        val metricRows = reportDays.joinToString("\n") { day ->
+            val metrics = dayMetrics.getValue(day)
+            "| $day | ${metrics.records} | ${percent(metrics.signalAccuracy)} | ${number(metrics.valueMae)} |"
+        }
 
         Files.writeString(
             reportDir.resolve("summary.md"),
             """
-            ## Kitchen dimmer/light example
+            ## Kitchen dimmer/light prediction example
 
-            Ten simulated days with two previously unknown numeric signals: `state.kitchen.dimmer` and
-            `state.kitchen.light`. The dimmer changes only a few times during the daytime, each day's schedule is
-            different, and it is forced to `0.0` between 23:00 and 06:00. The light follows the dimmer with a fixed
-            **10 minute delay**. Skynvættr is not told that relationship and neither signal is configured as a target.
+            Ten simulated days with two numeric signals: `state.kitchen.dimmer` and `state.kitchen.light`.
+            The dimmer changes only a few times during daytime and the light follows it with a fixed **10 minute delay**.
+            Skynvættr is not told this relationship.
 
-            Continuous and transition self-supervision run in parallel. Exact plateaus are not continuous-training
-            examples, and objective weights are adapted from predictive skill relative to a no-change persistence
-            baseline. Expectations remain a separate belief layer formed only from sufficiently confident/material
-            model predictions.
+            The example intentionally does **not** create Expectations. A shared learnable single-query Q/K/V attention
+            model predicts the **next meaningful numeric transition** as a horizon-free `Prediction<Double>` whose target
+            signal is itself decoded from the model's latent output. When the next transition is observed, its signal and
+            value supervise the model directly.
 
-            Learned expectation graphs are shown for days **1, 3, 5 and 10**, using only that day's observations and
-            the expectations known at the end of that day. A separate graph shows the raw world state for day 10.
+            The reports show snapshots for days **1, 3, 5 and 10**:
 
-            Automatically discovered prediction routes: **${routes.joinToString()}**.
-            Continuous training examples: **${learning.observationTrainer.trainingExampleCount}**.
-            Meaningful transitions detected: **${learning.transitionTrainer.detectedTransitionCount}**.
-            Transition training examples: **${learning.transitionTrainer.trainingExampleCount}**.
+            - `attention-day-N.png` aggregates the attention mass by source signal and observation age for predictions
+              resolved during that day. The age buckets are reporting-only; the model receives actual relative times.
+            - `target-signal-day-N.png` is a normalized actual-vs-predicted signal matrix. Increasing diagonal mass means
+              the model is learning which signal transitions next.
 
-            Objective state after ten days:
-            $objectiveSummary
+            | Day | Resolved predictions | Target-signal accuracy | Value MAE |
+            | ---: | ---: | ---: | ---: |
+            $metricRows
 
-            Expectations formed by signal: **${bySignal.entries.joinToString { "${it.key}: ${it.value}" }}**.
-            Resolved expectations: **$resolved** (`Fulfilled`: **$fulfilled**, `Violated`: **$violated**).
-            Results by signal: **${resultsBySignal.entries.joinToString { "${it.key}: ${it.value}" }}**.
-            Replayable expectation experiences: **${learning.trainer.experiences.size}**.
+            Total resolved transition predictions: **${records.size}**.
+            Model training examples: **${learning.model.trainingExampleCount}**.
+            Final moving training loss: **${number(learning.model.exponentialMovingLoss ?: Double.NaN)}**.
 
-            This lets us inspect both whether the learner increasingly exploits the fact that dimmer leads light and
-            which self-supervised objective earns more influence for each signal. The daily dimmer schedule remains
-            intentionally different across days apart from the overnight off period.
+            Attention is diagnostic evidence of what context the model uses, not proof of causality. The important kitchen
+            test is whether attention increasingly concentrates on recent dimmer history before light transitions while the
+            target-signal matrix moves toward correct `state.kitchen.light` predictions after dimmer changes.
             """.trimIndent() + "\n",
         )
     }
 
-    private fun objectiveWeights(
-        learning: KitchenLightLearning,
-        signalId: SignalId,
-    ): String {
-        val continuousWeight = learning.objectiveWeights.weight(signalId, LearningObjective.Continuous)
-        val transitionWeight = learning.objectiveWeights.weight(signalId, LearningObjective.Transition)
-        val continuousSkill = learning.objectiveWeights.skill(signalId, LearningObjective.Continuous)
-        val transitionSkill = learning.objectiveWeights.skill(signalId, LearningObjective.Transition)
-        return "continuous=${format(continuousWeight)} (skill=${format(continuousSkill)}), " +
-            "transition=${format(transitionWeight)} (skill=${format(transitionSkill)})"
-    }
+    private fun percent(value: Double): String = String.format(Locale.ROOT, "%.1f%%", value * 100.0)
 
-    private fun format(value: Double?): String =
-        value?.let { String.format(Locale.ROOT, "%.3f", it) } ?: "n/a"
-
-    private fun expectationOverlays(
-        expectations: List<Expectation<Double>>,
-        reportStart: Instant,
-        reportEnd: Instant,
-    ): List<SampleChartRenderer.OverlaySeries> =
-        expectations
-            .filter { expectation ->
-                val result = expectation.result
-                !expectation.formedAt.isAfter(reportEnd) &&
-                    (result == null || !result.timestamp.isBefore(reportStart))
-            }
-            .mapIndexed { index, expectation ->
-                val start = maxOf(expectation.formedAt, reportStart)
-                val end = minOf(expectation.result?.timestamp ?: reportEnd, reportEnd)
-                val suffix = expectation.result?.let { " (${it.value})" }.orEmpty()
-                SampleChartRenderer.OverlaySeries(
-                    label = "${expectation.signal.id.value} #${index + 1}$suffix",
-                    points = listOf(
-                        SampleChartRenderer.Point(start, expectation.signalInitialValue),
-                        SampleChartRenderer.Point(end, expectation.value),
-                    ),
-                )
-            }
+    private fun number(value: Double): String =
+        if (value.isFinite()) String.format(Locale.ROOT, "%.4f", value) else "n/a"
 }
