@@ -33,9 +33,9 @@ tasks.test {
     systemProperty("java.awt.headless", "true")
 }
 
-val renderThermalExpectationReport by tasks.registering(JavaExec::class) {
+val renderThermalPredictionReport by tasks.registering(JavaExec::class) {
     group = "reporting"
-    description = "Render the thermal expectation example report."
+    description = "Render the thermal transition-prediction report."
     classpath = reporting.runtimeClasspath
     mainClass.set("no.skasti.skynvaettr.reporting.ThermalExpectationReport")
     systemProperty("java.awt.headless", "true")
@@ -44,7 +44,7 @@ val renderThermalExpectationReport by tasks.registering(JavaExec::class) {
 
 val renderKitchenLightReport by tasks.registering(JavaExec::class) {
     group = "reporting"
-    description = "Render the kitchen dimmer/light example report."
+    description = "Render the kitchen dimmer/light transition-prediction report."
     classpath = reporting.runtimeClasspath
     mainClass.set("no.skasti.skynvaettr.reporting.KitchenLightReport")
     systemProperty("java.awt.headless", "true")
@@ -54,5 +54,5 @@ val renderKitchenLightReport by tasks.registering(JavaExec::class) {
 tasks.register("renderExampleReports") {
     group = "reporting"
     description = "Render all example reports and graphs under build/reports/examples."
-    dependsOn(renderThermalExpectationReport, renderKitchenLightReport)
+    dependsOn(renderThermalPredictionReport, renderKitchenLightReport)
 }
