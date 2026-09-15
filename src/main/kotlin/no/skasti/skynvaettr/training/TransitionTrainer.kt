@@ -5,12 +5,13 @@ import no.skasti.skynvaettr.models.TrainableModel
 import no.skasti.skynvaettr.representation.Representation
 import no.skasti.skynvaettr.runtime.ProcessingGraph
 import no.skasti.skynvaettr.signals.Sample
+import no.skasti.skynvaettr.signals.Signal
 import no.skasti.skynvaettr.signals.SignalId
 
 /**
  * Self-supervised objective that learns from meaningful transitions rather than every sense cycle.
  *
- * Whenever any numeric signal makes a meaningful transition, the current graph executions become a
+ * Whenever any Double signal makes a meaningful transition, the current graph executions become a
  * candidate source context. When a target signal later makes its own meaningful transition, the
  * model for that target is trained from the most recent transition context to the newly observed
  * value. This allows relationships such as dimmer-change -> later light-change to become training
@@ -50,12 +51,12 @@ class TransitionTrainer(
         graph: ProcessingGraph,
     ) {
         val numericSamples = samples
-            .filter { it.value is Number }
+            .filter { it.value is Double }
             .sortedBy { it.timestamp }
             .map { sample ->
                 @Suppress("UNCHECKED_CAST")
-                val signal = sample.signal as no.skasti.skynvaettr.signals.Signal<Double>
-                Sample(signal, (sample.value as Number).toDouble(), sample.timestamp)
+                val signal = sample.signal as Signal<Double>
+                Sample(signal, sample.value as Double, sample.timestamp)
             }
 
         val transitions = numericSamples.mapNotNull(detector::observe)
