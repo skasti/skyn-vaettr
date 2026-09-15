@@ -14,6 +14,10 @@ import no.skasti.skynvaettr.representation.Representation
  * dynamic-time-warping-style distance, preserving the binding between each position's signal
  * identity, value and relative time instead of collapsing the sequence through mean pooling.
  *
+ * Training weights are retained on individual examples and participate directly in neighbour
+ * weighting. This allows multiple self-supervised objectives to share a model without fractional
+ * objective weights silently collapsing to an identical stored-example count.
+ *
  * This remains deliberately simpler than a learned attention/QKV model. Its purpose is to provide a
  * sequence-aware baseline while keeping the model and expectation lifecycle independently replaceable.
  * Its latent output has one position: [predicted numeric value, confidence]. A decoder assigns that
@@ -27,6 +31,7 @@ class OnlineKnnModel(
     private data class Example(
         val input: Representation,
         val target: Double,
+        val weight: Double,
     )
 
     private val examples = ArrayDeque<Example>()
@@ -60,13 +65,14 @@ class OnlineKnnModel(
         var weightedTarget = 0.0
         var weightTotal = 0.0
         nearest.forEach { (example, distance) ->
-            val weight = 1.0 / (distance + 1e-6)
-            weightedTarget += example.target * weight
-            weightTotal += weight
+            val neighbourWeight = example.weight / (distance + 1e-6)
+            weightedTarget += example.target * neighbourWeight
+            weightTotal += neighbourWeight
         }
 
         val nearestDistance = nearest.first().second
-        val experienceConfidence = (examples.size.toDouble() / confidenceExamples).coerceIn(0.0, 1.0)
+        val retainedWeight = examples.sumOf { it.weight }
+        val experienceConfidence = (retainedWeight / confidenceExamples).coerceIn(0.0, 1.0)
         val localityConfidence = exp(-nearestDistance).coerceIn(0.0, 1.0)
         return output(
             value = weightedTarget / weightTotal,
@@ -90,13 +96,14 @@ class OnlineKnnModel(
             "Expected representation width $learnedInputDimensions, got ${input.dimensions}"
         }
 
-        val storedInput = copyOf(input)
-        val targetValue = target[0][0]
-        val copies = weight.coerceAtMost(4.0).toInt().coerceAtLeast(1)
-        repeat(copies) {
-            examples.addLast(Example(storedInput, targetValue))
-            while (examples.size > maxExamples) examples.removeFirst()
-        }
+        examples.addLast(
+            Example(
+                input = copyOf(input),
+                target = target[0][0],
+                weight = weight,
+            ),
+        )
+        while (examples.size > maxExamples) examples.removeFirst()
     }
 
     /**
