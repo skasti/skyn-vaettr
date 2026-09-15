@@ -86,6 +86,15 @@ object KitchenLightReport {
         val fulfilled = expectations.count { it.result?.value == "Fulfilled" }
         val violated = expectations.count { it.result?.value == "Violated" }
         val bySignal = expectations.groupingBy { it.signal.id.value }.eachCount().toSortedMap()
+        val resultsBySignal = expectations
+            .filter { it.result != null }
+            .groupBy { it.signal.id.value }
+            .toSortedMap()
+            .mapValues { (_, signalExpectations) ->
+                val signalFulfilled = signalExpectations.count { it.result?.value == "Fulfilled" }
+                val signalViolated = signalExpectations.count { it.result?.value == "Violated" }
+                "$signalFulfilled fulfilled / $signalViolated violated"
+            }
         val routes = learning.graph.predictionExecutions().map { it.prediction.signal.id.value }.distinct().sorted()
 
         Files.writeString(
@@ -98,13 +107,19 @@ object KitchenLightReport {
             different, and it is forced to `0.0` between 23:00 and 06:00. The light follows the dimmer with a fixed
             **10 minute delay**. Skynvættr is not told that relationship and neither signal is configured as a target.
 
+            Models learn continuously from ordinary observed transitions via `ObservationTrainer`; expectations are not
+            used to bootstrap learning. Expectations are only formed from sufficiently confident, material model
+            predictions and their outcomes remain available as an additional replay/surprise signal.
+
             Learned expectation graphs are shown for days **1, 3, 5 and 10**, using only that day's observations and
             the expectations known at the end of that day. A separate graph shows the raw world state for day 10.
 
             Automatically discovered prediction routes: **${routes.joinToString()}**.
+            Self-supervised observed transitions trained: **${learning.observationTrainer.trainingExampleCount}**.
             Expectations formed by signal: **${bySignal.entries.joinToString { "${it.key}: ${it.value}" }}**.
             Resolved expectations: **$resolved** (`Fulfilled`: **$fulfilled**, `Violated`: **$violated**).
-            Replayable experiences: **${learning.trainer.experiences.size}**.
+            Results by signal: **${resultsBySignal.entries.joinToString { "${it.key}: ${it.value}" }}**.
+            Replayable expectation experiences: **${learning.trainer.experiences.size}**.
 
             This lets us inspect whether the generic learner increasingly exploits the fact that dimmer leads light,
             rather than merely memorizing a repeated daily schedule. The daily dimmer schedule is intentionally not
