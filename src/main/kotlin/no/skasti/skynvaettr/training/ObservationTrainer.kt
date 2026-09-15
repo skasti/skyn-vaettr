@@ -1,5 +1,6 @@
 package no.skasti.skynvaettr.training
 
+import kotlin.math.abs
 import no.skasti.skynvaettr.models.PredictionDecoder
 import no.skasti.skynvaettr.models.TrainableModel
 import no.skasti.skynvaettr.representation.Representation
@@ -8,21 +9,27 @@ import no.skasti.skynvaettr.signals.Sample
 import no.skasti.skynvaettr.signals.SignalId
 
 /**
- * Self-supervised online trainer that learns from ordinary observed transitions.
+ * Continuous self-supervised objective for ordinary numeric evolution.
  *
- * Each prediction execution from one sense cycle is retained until the same signal is observed in a
- * later cycle. The later observed value becomes the training target for the exact model/input pair
- * that produced the earlier prediction. No expectation needs to be opened or resolved first.
+ * The previous execution is evaluated when the same signal is observed again. Exact plateaus are
+ * deliberately not added as training examples: persistence already predicts them perfectly and they
+ * would otherwise swamp sparse but informative dynamics such as delayed dimmer/light transitions.
  *
- * The elapsed time is deliberately not fixed here: it is whatever interval actually occurred between
- * observations. Temporal context remains part of the graph-produced Representation, so models can
- * learn from observation sequences without introducing a configured +N prediction horizon.
+ * Training weight is supplied by [AdaptiveObjectiveWeights], shared with other objectives such as
+ * [TransitionTrainer]. Objective usefulness is scored relative to a persistence baseline rather than
+ * by raw accuracy, so an objective receives credit only when it predicts change better than "stay at
+ * the previous value".
  */
-class ObservationTrainer : Trainer {
+class ObservationTrainer(
+    private val objectiveWeights: AdaptiveObjectiveWeights = AdaptiveObjectiveWeights(),
+    private val minimumChange: Double = 1e-12,
+) : Trainer {
     private data class Pending(
         val model: TrainableModel,
         val decoder: PredictionDecoder<Any?>,
         val input: Representation,
+        val prediction: Double,
+        val baseline: Double,
     )
 
     private data class Key(
@@ -32,6 +39,10 @@ class ObservationTrainer : Trainer {
 
     private val pending = linkedMapOf<Key, Pending>()
 
+    init {
+        require(minimumChange >= 0.0)
+    }
+
     var trainingExampleCount: Long = 0
         private set
 
@@ -40,21 +51,35 @@ class ObservationTrainer : Trainer {
         graph: ProcessingGraph,
     ) {
         val latestSamples = samples
+            .filter { it.value is Double }
             .groupBy { it.signal.id }
             .mapValues { (_, signalSamples) -> signalSamples.maxBy { it.timestamp } }
 
         pending.toMap().forEach { (key, previous) ->
-            val observed = latestSamples[key.signalId] ?: return@forEach
-            previous.model.train(
-                previous.input,
-                previous.decoder.trainingTarget(observed.value),
-            )
-            trainingExampleCount++
+            val observedSample = latestSamples[key.signalId] ?: return@forEach
+            val observed = observedSample.value as Double
+            if (abs(observed - previous.baseline) > minimumChange) {
+                objectiveWeights.record(
+                    signalId = key.signalId,
+                    objective = LearningObjective.Continuous,
+                    prediction = previous.prediction,
+                    baseline = previous.baseline,
+                    observed = observed,
+                )
+                previous.model.train(
+                    previous.input,
+                    previous.decoder.trainingTarget(observed),
+                    weight = objectiveWeights.weight(key.signalId, LearningObjective.Continuous),
+                )
+                trainingExampleCount++
+            }
             pending.remove(key)
         }
 
         graph.predictionExecutions().forEach { execution ->
             val model = execution.model as? TrainableModel ?: return@forEach
+            val predictionValue = execution.prediction.value as? Double ?: return@forEach
+            val current = latestSamples[execution.prediction.signal.id]?.value as? Double ?: return@forEach
             @Suppress("UNCHECKED_CAST")
             val decoder = execution.decoder as PredictionDecoder<Any?>
             val key = Key(
@@ -65,6 +90,8 @@ class ObservationTrainer : Trainer {
                 model = model,
                 decoder = decoder,
                 input = execution.input,
+                prediction = predictionValue,
+                baseline = current,
             )
         }
     }
