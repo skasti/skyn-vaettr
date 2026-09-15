@@ -67,7 +67,7 @@ data class TransitionPredictionExecution(
     val prediction: Prediction<Double>,
     val sourceTransition: NumericTransitionEvent,
     val historyPositions: List<SensoryPosition>,
-    val attentionWeights: DoubleArray,
+    val attentionWeights: List<DoubleArray>,
 )
 
 /** Exposes transition predictions to supervision without giving trainers ownership of inference. */
@@ -78,11 +78,11 @@ interface TransitionPredictionSource {
 /**
  * Explicit processing pipeline for horizon-free next-transition prediction.
  *
- * Samples -> sensory history -> tokenization/encoding -> Representation -> transition-triggered QKV
- * -> latent output -> decoder -> Prediction.
+ * Samples -> sensory history -> tokenization/encoding -> Representation -> self-attention Q/K/V
+ * -> contextualized sensory positions -> transition head -> decoder -> Prediction.
  *
- * The graph owns both model and decoder and performs inference. A trainer may consume completed
- * executions later, but does not decide when or how inference runs.
+ * Meaningful transition detection only decides when inference runs. It does not manufacture a query
+ * token or otherwise tell the model which historical relationship to use.
  */
 class TransitionPredictionProcessingGraph(
     sampleStore: SampleStore,
@@ -114,7 +114,7 @@ class TransitionPredictionProcessingGraph(
             return
         }
 
-        latestExecution = predict(sourceTransition, frame, now)
+        latestExecution = predict(sourceTransition, frame)
     }
 
     override fun models(): List<Model> = listOf(model)
@@ -147,10 +147,8 @@ class TransitionPredictionProcessingGraph(
     private fun predict(
         sourceTransition: NumericTransitionEvent,
         frame: SensoryFrame,
-        now: Instant,
     ): TransitionPredictionExecution {
-        val query = sensoryEncoder.encodeEvent(sourceTransition.current, now)
-        val modelInput = Representation.from(listOf(query) + frame.representation.toList())
+        val modelInput = frame.representation
         val latentOutput = model.forward(modelInput)
         val prediction = decoder.decode(latentOutput)
 
