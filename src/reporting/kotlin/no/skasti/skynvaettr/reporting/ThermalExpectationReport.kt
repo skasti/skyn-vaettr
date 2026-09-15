@@ -6,12 +6,8 @@ import java.time.Duration
 import java.time.Instant
 import java.util.Locale
 import no.skasti.skynvaettr.examples.ThermalExpectationLearning
-import no.skasti.skynvaettr.expectations.Expectation
-import no.skasti.skynvaettr.models.OnlineKnnModel
-import no.skasti.skynvaettr.signals.SignalId
-import no.skasti.skynvaettr.training.LearningObjective
 
-/** Renders the inspectable report for the minimal thermal expectation example. */
+/** Renders prediction and attention diagnostics for the minimal thermal example. */
 object ThermalExpectationReport {
     private val reportDays = listOf(1L, 3L, 5L, 10L)
 
@@ -23,143 +19,90 @@ object ThermalExpectationReport {
         val learning = ThermalExpectationLearning()
         val world = learning.world
         val duration = Duration.ofDays(10)
-        val expectationSnapshots = mutableMapOf<Long, List<Expectation<Double>>>()
 
         world.simulate(
             duration = duration,
             step = Duration.ofMinutes(5),
-        ) { samples ->
-            learning.vaettr.sense(samples)
+            onSense = learning.vaettr::sense,
+        )
 
-            val timestamp = samples.firstOrNull()?.timestamp
-            reportDays.forEach { day ->
-                if (timestamp == Instant.EPOCH.plus(Duration.ofDays(day))) {
-                    expectationSnapshots[day] = learning.trainer.expectations.toList()
-                }
-            }
-        }
-
-        val renderer = SampleChartRenderer()
-        val worldSeries = listOf(
+        val sampleRenderer = SampleChartRenderer()
+        val series = listOf(
             SampleChartRenderer.Series(world.outdoorTemperature.id, "Outdoor temperature"),
             SampleChartRenderer.Series(world.indoorTemperature.id, "Indoor temperature"),
         )
-
         val finalDayStart = Instant.EPOCH.plus(Duration.ofDays(9))
         val finalDayEnd = Instant.EPOCH.plus(duration)
-        val finalDaySamples = learning.sampleStore.get(finalDayStart, finalDayEnd.plusNanos(1))
-
-        renderer.render(
-            title = "Thermal expectation example — day 10",
+        sampleRenderer.render(
+            title = "Thermal world — day 10",
             yAxisTitle = "Temperature (°C)",
-            samples = finalDaySamples,
-            series = worldSeries,
+            samples = learning.sampleStore.get(finalDayStart, finalDayEnd.plusNanos(1)),
+            series = series,
             output = reportDir.resolve("day.png"),
         )
 
-        reportDays.forEach { day ->
-            val reportStart = Instant.EPOCH.plus(Duration.ofDays(day - 1))
-            val reportEnd = Instant.EPOCH.plus(Duration.ofDays(day))
-            val samples = learning.sampleStore.get(reportStart, reportEnd.plusNanos(1))
-            val expectations = checkNotNull(expectationSnapshots[day]) {
-                "Expected an expectation snapshot at the end of simulated day $day"
-            }
-
-            renderer.render(
-                title = "Thermal expectation example — learned expectations, day $day",
-                yAxisTitle = "Temperature (°C)",
-                samples = samples,
-                series = worldSeries,
-                overlays = expectationOverlays(expectations, reportStart, reportEnd),
-                output = reportDir.resolve("expectations-day-$day.png"),
+        val signals = learning.decoder.knownSignals().map { it.id }.sortedBy { it.value }
+        val records = learning.predictionTrainer.records
+        val dayMetrics = reportDays.associateWith { day ->
+            val dayRecords = TransitionPredictionReportSupport.recordsForDay(records, day)
+            TransitionPredictionReportSupport.renderAttentionHeatmap(
+                title = "Thermal attention by signal / age — day $day",
+                records = dayRecords,
+                signals = signals,
+                output = reportDir.resolve("attention-day-$day.png"),
             )
+            TransitionPredictionReportSupport.renderTargetSignalHeatmap(
+                title = "Thermal next-transition target signal — day $day",
+                records = dayRecords,
+                signals = signals,
+                output = reportDir.resolve("target-signal-day-$day.png"),
+            )
+            TransitionPredictionReportSupport.metrics(dayRecords)
         }
 
-        val resolved = learning.trainer.expectations.count { it.result != null }
-        val fulfilled = learning.trainer.expectations.count { it.result?.value == "Fulfilled" }
-        val violated = learning.trainer.expectations.count { it.result?.value == "Violated" }
-        val experiences = learning.trainer.experiences
-        val models = learning.graph.models().filterIsInstance<OnlineKnnModel>()
-        val retainedTrainingExamples = models.sumOf { it.trainingExampleCount }
-        val objectiveSummary = listOf(world.outdoorTemperature.id, world.indoorTemperature.id)
-            .joinToString(separator = "\n") { signalId ->
-                "- `${signalId.value}`: ${objectiveWeights(learning, signalId)}"
-            }
+        val metricRows = reportDays.joinToString("\n") { day ->
+            val metrics = dayMetrics.getValue(day)
+            "| $day | ${metrics.records} | ${percent(metrics.signalAccuracy)} | ${number(metrics.valueMae)} |"
+        }
 
         Files.writeString(
             reportDir.resolve("summary.md"),
             """
-            ## Thermal expectation example
+            ## Thermal transition-prediction example
 
             Ten simulated days using only `sensor.outdoor.temperature` and `sensor.indoor.temperature` as observations.
-            Neither signal is configured as a prediction target. The graph discovers one numeric prediction route per
-            observed compatible signal, while each predictor consumes the same complete sensory `Representation`.
+            Outdoor temperature follows a daily sine wave and indoor temperature follows it gradually with thermal inertia.
+            No relationship between the two signals is configured in the learner.
 
-            Continuous and transition self-supervision run in parallel. Objective weights are adapted from predictive
-            skill relative to a no-change persistence baseline rather than being assigned from signal names or domain
-            metadata. Expectations remain a separate belief layer.
+            The example intentionally does **not** create Expectations. The same shared learnable single-query Q/K/V
+            attention model used by the kitchen example predicts the next meaningful numeric transition. Target signal
+            identity and value are both learned outputs and are supervised only when the next transition is observed.
 
-            Learned expectation graphs are shown for days **1, 3, 5 and 10** so the default models' development can be
-            inspected over time. Each graph contains only that day's observations and the expectations known at the end
-            of that day; later outcomes are therefore not leaked into earlier snapshots.
+            Snapshots for days **1, 3, 5 and 10** show:
 
-            After ten days: discovered numeric predictors: **${models.size}**.
-            Continuous training examples: **${learning.observationTrainer.trainingExampleCount}**.
-            Meaningful transitions detected: **${learning.transitionTrainer.detectedTransitionCount}**.
-            Transition training examples: **${learning.transitionTrainer.trainingExampleCount}**.
+            - attention mass by source signal and observation age;
+            - normalized actual-vs-predicted next-transition signal matrices.
 
-            Objective state after ten days:
-            $objectiveSummary
+            The age buckets exist only in reporting; the model receives actual relative times from the sensory
+            `Representation` within the existing history window.
 
-            Resolved expectations: **$resolved** (`Fulfilled`: **$fulfilled**, `Violated`: **$violated**).
-            Replayable expectation episodes: **${experiences.size}**.
-            Model training examples currently retained across predictors: **$retainedTrainingExamples**.
+            | Day | Resolved predictions | Target-signal accuracy | Value MAE |
+            | ---: | ---: | ---: | ---: |
+            $metricRows
 
-            Each expectation series runs from the signal value observed when the belief was formed
-            (`signalInitialValue`) to the expectation's current `value` at its result time, or at the end of the graph
-            window while it remains active. Completed series include the result in parentheses. The x-axis therefore
-            means **when the expectation was held**, not a forecast target timestamp.
+            Total resolved transition predictions: **${records.size}**.
+            Model training examples: **${learning.model.trainingExampleCount}**.
+            Final moving training loss: **${number(learning.model.exponentialMovingLoss ?: Double.NaN)}**.
+
+            Thermal is deliberately a harder interpretation case than kitchen because both signals move continuously.
+            The report is therefore useful for checking whether attention develops a stable temporal relationship without
+            assuming that a high attention weight by itself proves causality.
             """.trimIndent() + "\n",
         )
     }
 
-    private fun objectiveWeights(
-        learning: ThermalExpectationLearning,
-        signalId: SignalId,
-    ): String {
-        val continuousWeight = learning.objectiveWeights.weight(signalId, LearningObjective.Continuous)
-        val transitionWeight = learning.objectiveWeights.weight(signalId, LearningObjective.Transition)
-        val continuousSkill = learning.objectiveWeights.skill(signalId, LearningObjective.Continuous)
-        val transitionSkill = learning.objectiveWeights.skill(signalId, LearningObjective.Transition)
-        return "continuous=${format(continuousWeight)} (skill=${format(continuousSkill)}), " +
-            "transition=${format(transitionWeight)} (skill=${format(transitionSkill)})"
-    }
+    private fun percent(value: Double): String = String.format(Locale.ROOT, "%.1f%%", value * 100.0)
 
-    private fun format(value: Double?): String =
-        value?.let { String.format(Locale.ROOT, "%.3f", it) } ?: "n/a"
-
-    private fun expectationOverlays(
-        expectations: List<Expectation<Double>>,
-        reportStart: Instant,
-        reportEnd: Instant,
-    ): List<SampleChartRenderer.OverlaySeries> =
-        expectations
-            .filter { expectation ->
-                val result = expectation.result
-                !expectation.formedAt.isAfter(reportEnd) &&
-                    (result == null || !result.timestamp.isBefore(reportStart))
-            }
-            .mapIndexed { index, expectation ->
-                val start = maxOf(expectation.formedAt, reportStart)
-                val end = minOf(expectation.result?.timestamp ?: reportEnd, reportEnd)
-                val resultSuffix = expectation.result?.let { " (${it.value})" }.orEmpty()
-
-                SampleChartRenderer.OverlaySeries(
-                    label = "Expectation ${index + 1}$resultSuffix",
-                    points = listOf(
-                        SampleChartRenderer.Point(start, expectation.signalInitialValue),
-                        SampleChartRenderer.Point(end, expectation.value),
-                    ),
-                )
-            }
+    private fun number(value: Double): String =
+        if (value.isFinite()) String.format(Locale.ROOT, "%.4f", value) else "n/a"
 }
