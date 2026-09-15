@@ -66,6 +66,7 @@ data class TransitionPredictionExecution(
     val input: Representation,
     val prediction: Prediction<Double>,
     val sourceTransition: NumericTransitionEvent,
+    val candidateSignals: List<SignalId>,
     val historyPositions: List<SensoryPosition>,
     val attentionWeights: List<DoubleArray>,
 )
@@ -78,11 +79,11 @@ interface TransitionPredictionSource {
 /**
  * Explicit processing pipeline for horizon-free next-transition prediction.
  *
- * Samples -> sensory history -> tokenization/encoding -> Representation -> self-attention Q/K/V
- * -> contextualized sensory positions -> transition head -> decoder -> Prediction.
+ * Samples -> sensory history -> tokenization/encoding -> Representation -> candidate-conditioned
+ * Q/K/V attention -> ranked signal candidates -> decoder -> Prediction.
  *
- * Meaningful transition detection only decides when inference runs. It does not manufacture a query
- * token or otherwise tell the model which historical relationship to use.
+ * Meaningful transition detection only decides when inference runs. It does not specify which signal
+ * should follow; every distinct numeric signal present in the representation is scored as a candidate.
  */
 class TransitionPredictionProcessingGraph(
     sampleStore: SampleStore,
@@ -150,6 +151,7 @@ class TransitionPredictionProcessingGraph(
     ): TransitionPredictionExecution {
         val modelInput = frame.representation
         val latentOutput = model.forward(modelInput)
+        val candidateSignals = decoder.candidateSignals(latentOutput).map { it.id }
         val prediction = decoder.decode(latentOutput)
 
         return TransitionPredictionExecution(
@@ -158,6 +160,7 @@ class TransitionPredictionProcessingGraph(
             input = modelInput,
             prediction = prediction,
             sourceTransition = sourceTransition,
+            candidateSignals = candidateSignals,
             historyPositions = frame.positions,
             attentionWeights = model.latestAttentionWeights(),
         )
