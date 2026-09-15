@@ -7,7 +7,7 @@ import java.time.Instant
 import java.util.Locale
 import no.skasti.skynvaettr.examples.KitchenLightLearning
 
-/** Renders prediction and attention diagnostics for the dimmer/light temporal-relation example. */
+/** Renders prediction and self-attention diagnostics for the dimmer/light temporal-relation example. */
 object KitchenLightReport {
     private val reportDays = listOf(1L, 3L, 5L, 10L)
 
@@ -46,7 +46,7 @@ object KitchenLightReport {
         val dayMetrics = reportDays.associateWith { day ->
             val dayRecords = TransitionPredictionReportSupport.recordsForDay(records, day)
             TransitionPredictionReportSupport.renderAttentionHeatmap(
-                title = "Kitchen attention by signal / age — day $day",
+                title = "Kitchen self-attention relationships — day $day",
                 records = dayRecords,
                 signals = signals,
                 output = reportDir.resolve("attention-day-$day.png"),
@@ -73,15 +73,17 @@ object KitchenLightReport {
             The dimmer changes only a few times during daytime and the light follows it with a fixed **10 minute delay**.
             Skynvættr is not told this relationship.
 
-            The example intentionally does **not** create Expectations. A shared learnable single-query Q/K/V attention
-            model predicts the **next meaningful numeric transition** as a horizon-free `Prediction<Double>` whose target
-            signal is itself decoded from the model's latent output. When the next transition is observed, its signal and
-            value supervise the model directly.
+            The example intentionally does **not** create Expectations. A shared learnable self-attention Q/K/V model
+            contextualizes every sensory position against every other position, pools those contextualized positions and
+            predicts the **next meaningful numeric transition** as a horizon-free `Prediction<Double>`. Target signal
+            identity is decoded from the model's latent output. The later observed transition provides supervision.
 
             The reports show snapshots for days **1, 3, 5 and 10**:
 
-            - `attention-day-N.png` aggregates the attention mass by source signal and observation age for predictions
-              resolved during that day. The age buckets are reporting-only; the model receives actual relative times.
+            - `attention-day-N.png` shows average self-attention by **query signal → attended signal**. For example, the
+              `state.kitchen.light` row / `state.kitchen.dimmer` column tells us how much a light query attends to dimmer
+              history. Each query row is normalized before aggregation, so the graph is not biased by the number of stored
+              positions for a signal.
             - `target-signal-day-N.png` is a normalized actual-vs-predicted signal matrix. Increasing diagonal mass means
               the model is learning which signal transitions next.
 
@@ -95,9 +97,9 @@ object KitchenLightReport {
             Model training examples: **${learning.model.trainingExampleCount}**.
             Final moving training loss: **${number(learning.model.exponentialMovingLoss ?: Double.NaN)}**.
 
-            Attention is diagnostic evidence of what context the model uses, not proof of causality. The important kitchen
-            test is whether attention increasingly concentrates on recent dimmer history before light transitions while the
-            target-signal matrix moves toward correct `state.kitchen.light` predictions after dimmer changes.
+            Attention is diagnostic evidence of learned context use, not proof of causality. For the kitchen scenario the
+            useful relationship to watch is whether `state.kitchen.light` increasingly attends to `state.kitchen.dimmer`
+            while next-transition target accuracy improves.
             """.trimIndent(),
         ).joinToString("\n") + "\n"
 
