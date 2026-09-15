@@ -79,11 +79,11 @@ interface TransitionPredictionSource {
 /**
  * Explicit processing pipeline for horizon-free next-transition prediction.
  *
- * Samples -> sensory history -> tokenization/encoding -> Representation -> candidate-conditioned
- * Q/K/V attention -> ranked signal candidates -> decoder -> Prediction.
+ * Samples -> sensory history -> tokenization/encoding -> Representation -> observed transition event
+ * -> candidate-conditioned Q/K/V attention -> ranked signal candidates -> decoder -> Prediction.
  *
- * Meaningful transition detection only decides when inference runs. It does not specify which signal
- * should follow; every distinct numeric signal present in the representation is scored as a candidate.
+ * The transition event is observed input: signal identity + delta + event marker. It tells the model
+ * what just changed, but never which candidate signal should happen next.
  */
 class TransitionPredictionProcessingGraph(
     sampleStore: SampleStore,
@@ -115,7 +115,7 @@ class TransitionPredictionProcessingGraph(
             return
         }
 
-        latestExecution = predict(sourceTransition, frame)
+        latestExecution = predict(sourceTransition, frame, now)
     }
 
     override fun models(): List<Model> = listOf(model)
@@ -148,8 +148,21 @@ class TransitionPredictionProcessingGraph(
     private fun predict(
         sourceTransition: NumericTransitionEvent,
         frame: SensoryFrame,
+        now: Instant,
     ): TransitionPredictionExecution {
-        val modelInput = frame.representation
+        val eventEmbedding = sensoryEncoder.encodeTransitionEvent(
+            previous = sourceTransition.previous,
+            current = sourceTransition.current,
+            now = now,
+        )
+        val modelInput = Representation.from(frame.representation.toList() + eventEmbedding)
+        val positions = frame.positions +
+            SensoryPosition(
+                signalId = sourceTransition.current.signal.id,
+                timestamp = sourceTransition.current.timestamp,
+                relativeTime = 0.0,
+                kind = SensoryPositionKind.TransitionEvent,
+            )
         val latentOutput = model.forward(modelInput)
         val candidateSignals = decoder.candidateSignals(latentOutput).map { it.id }
         val prediction = decoder.decode(latentOutput)
@@ -161,7 +174,7 @@ class TransitionPredictionProcessingGraph(
             prediction = prediction,
             sourceTransition = sourceTransition,
             candidateSignals = candidateSignals,
-            historyPositions = frame.positions,
+            historyPositions = positions,
             attentionWeights = model.latestAttentionWeights(),
         )
     }
