@@ -35,20 +35,24 @@ data class AttentionAttribution(
 )
 
 /**
- * Trains a shared learnable attention model to predict the next meaningful numeric transition.
+ * Trains a graph-owned attention model to predict the next meaningful numeric transition.
  *
- * Predictions are event-conditioned and have no target timestamp. A prediction made immediately
- * after one transition remains pending until the next meaningful transition is observed; that
- * observed transition then supplies both target signal identity and target value for training.
+ * The trainer owns no model. It discovers the shared [LearnedAttentionTransitionModel] through the
+ * [ProcessingGraph], records the exact input/output used for a pending prediction, and later trains
+ * that same graph-owned model when the next meaningful transition is observed.
+ *
+ * Input position 0 is the sensory position for the transition that triggered the prediction. The
+ * remaining positions are the graph's ordinary sensory history. This makes Q event-conditioned
+ * without hard-coding any relationship between source and target signals.
  */
 class TransitionPredictionTrainer(
-    val model: LearnedAttentionTransitionModel,
     val decoder: TransitionPredictionDecoder,
     private val detector: NumericTransitionDetector = NumericTransitionDetector(),
 ) : Trainer {
     private data class Pending(
         val formedAt: Instant,
         val sourceTransition: SignalId,
+        val model: LearnedAttentionTransitionModel,
         val input: Representation,
         val positions: List<SensoryPosition>,
         val prediction: Prediction<Double>,
@@ -63,6 +67,7 @@ class TransitionPredictionTrainer(
 
     override fun onSenseCompleted(samples: List<Sample<*>>, graph: ProcessingGraph) {
         val sensingGraph = graph as? SensingProcessingGraph ?: return
+        val model = graph.models().filterIsInstance<LearnedAttentionTransitionModel>().singleOrNull() ?: return
         val numericSamples = samples.mapNotNull { sample ->
             val value = sample.value as? Double ?: return@mapNotNull null
             @Suppress("UNCHECKED_CAST")
@@ -75,12 +80,12 @@ class TransitionPredictionTrainer(
             .sortedWith(compareBy<NumericTransition>({ it.current.timestamp }, { it.current.signal.id.value }))
         if (transitions.isEmpty()) return
 
-        // One model output represents one next transition. Simultaneous transitions are currently
-        // resolved deterministically by signal id; richer set-valued event targets can follow later.
+        // One model output currently represents one next transition. Simultaneous transitions are
+        // resolved deterministically until a set-valued transition target is justified experimentally.
         val outcome = transitions.first()
         pending?.let { previous ->
-            val beforeLoss = model.exponentialMovingLoss
-            model.train(
+            val beforeLoss = previous.model.exponentialMovingLoss
+            previous.model.train(
                 input = previous.input,
                 target = decoder.trainingTarget(outcome.current.signal, outcome.current.value),
             )
@@ -102,13 +107,21 @@ class TransitionPredictionTrainer(
             )
         }
 
-        val input = sensingGraph.latestRepresentation ?: return
+        val history = sensingGraph.latestRepresentation ?: return
         val positions = sensingGraph.latestPositions
+        if (positions.size != history.positions) return
+        val sourceIndex = positions.indices
+            .filter { index -> positions[index].signalId == outcome.current.signal.id }
+            .minByOrNull { index -> kotlin.math.abs(Duration.between(positions[index].timestamp, outcome.current.timestamp).toMillis()) }
+            ?: return
+
+        val input = Representation.from(listOf(history[sourceIndex]) + history.toList())
         val output = model.forward(input)
         val prediction = decoder.decode(output)
         pending = Pending(
             formedAt = outcome.current.timestamp,
             sourceTransition = outcome.current.signal.id,
+            model = model,
             input = input,
             positions = positions,
             prediction = prediction,
