@@ -9,9 +9,9 @@ import no.skasti.skynvaettr.models.Model
 import no.skasti.skynvaettr.models.TransitionPredictionDecoder
 import no.skasti.skynvaettr.representation.Representation
 import no.skasti.skynvaettr.signals.Sample
+import no.skasti.skynvaettr.signals.SampleStore
 import no.skasti.skynvaettr.signals.Signal
 import no.skasti.skynvaettr.signals.SignalId
-import no.skasti.skynvaettr.signals.SampleStore
 
 /** One meaningful numeric transition used to trigger the next-transition prediction path. */
 data class NumericTransitionEvent(
@@ -103,43 +103,61 @@ class TransitionPredictionProcessingGraph(
         if (samples.isEmpty()) return
 
         val now = samples.maxOf { it.timestamp }
-        val frame = sensoryEncoder.frame(now)
-        if (frame == null) {
-            latestRepresentation = null
-            latestPositions = emptyList()
-            latestExecution = null
-            return
-        }
-
+        val frame = encodeHistory(now) ?: return clearFrame()
         latestRepresentation = frame.representation
         latestPositions = frame.positions
 
-        val numericSamples = samples.mapNotNull { sample ->
-            val value = sample.value as? Double ?: return@mapNotNull null
-            @Suppress("UNCHECKED_CAST")
-            val signal = sample.signal as Signal<Double>
-            decoder.observe(signal)
-            Sample(signal, value, sample.timestamp)
-        }
-        val transitions = numericSamples
-            .mapNotNull(transitionDetector::observe)
-            .sortedWith(compareBy<NumericTransitionEvent>({ it.current.timestamp }, { it.current.signal.id.value }))
-
-        val sourceTransition = transitions.firstOrNull()
+        observeKnownSignals(samples)
+        val sourceTransition = detectSourceTransition(samples)
         if (sourceTransition == null) {
             latestExecution = null
             return
         }
 
-        val query = sensoryEncoder.encodeEvent(sourceTransition.current, now)
-        val input = Representation.from(listOf(query) + frame.representation.toList())
-        val output = model.forward(input)
-        val prediction = decoder.decode(output)
+        latestExecution = predict(sourceTransition, frame, now)
+    }
 
-        latestExecution = TransitionPredictionExecution(
+    override fun models(): List<Model> = listOf(model)
+
+    override fun latestTransitionPredictionExecution(): TransitionPredictionExecution? = latestExecution
+
+    private fun encodeHistory(now: Instant): SensoryFrame? = sensoryEncoder.frame(now)
+
+    private fun observeKnownSignals(samples: List<Sample<*>>) {
+        samples.forEach { sample ->
+            val value = sample.value as? Double ?: return@forEach
+            @Suppress("UNCHECKED_CAST")
+            val signal = sample.signal as Signal<Double>
+            require(value.isFinite())
+            decoder.observe(signal)
+        }
+    }
+
+    private fun detectSourceTransition(samples: List<Sample<*>>): NumericTransitionEvent? =
+        samples
+            .mapNotNull { sample ->
+                val value = sample.value as? Double ?: return@mapNotNull null
+                @Suppress("UNCHECKED_CAST")
+                val signal = sample.signal as Signal<Double>
+                transitionDetector.observe(Sample(signal, value, sample.timestamp))
+            }
+            .sortedWith(compareBy<NumericTransitionEvent>({ it.current.timestamp }, { it.current.signal.id.value }))
+            .firstOrNull()
+
+    private fun predict(
+        sourceTransition: NumericTransitionEvent,
+        frame: SensoryFrame,
+        now: Instant,
+    ): TransitionPredictionExecution {
+        val query = sensoryEncoder.encodeEvent(sourceTransition.current, now)
+        val modelInput = Representation.from(listOf(query) + frame.representation.toList())
+        val latentOutput = model.forward(modelInput)
+        val prediction = decoder.decode(latentOutput)
+
+        return TransitionPredictionExecution(
             model = model,
             decoder = decoder,
-            input = input,
+            input = modelInput,
             prediction = prediction,
             sourceTransition = sourceTransition,
             historyPositions = frame.positions,
@@ -147,7 +165,9 @@ class TransitionPredictionProcessingGraph(
         )
     }
 
-    override fun models(): List<Model> = listOf(model)
-
-    override fun latestTransitionPredictionExecution(): TransitionPredictionExecution? = latestExecution
+    private fun clearFrame() {
+        latestRepresentation = null
+        latestPositions = emptyList()
+        latestExecution = null
+    }
 }
