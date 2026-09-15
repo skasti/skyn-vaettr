@@ -7,15 +7,6 @@ import no.skasti.skynvaettr.signals.SignalId
 import no.skasti.skynvaettr.training.TransitionPredictionRecord
 
 object TransitionPredictionReportSupport {
-    /** Reporting-only buckets; the model receives actual relative times, not these bucket boundaries. */
-    private val ageBuckets = listOf(
-        AgeBucket("0–5m", Duration.ZERO, Duration.ofMinutes(5)),
-        AgeBucket("5–15m", Duration.ofMinutes(5), Duration.ofMinutes(15)),
-        AgeBucket("15–30m", Duration.ofMinutes(15), Duration.ofMinutes(30)),
-        AgeBucket("30–60m", Duration.ofMinutes(30), Duration.ofMinutes(60)),
-        AgeBucket("60–86m", Duration.ofMinutes(60), Duration.ofMinutes(86)),
-    )
-
     data class DayMetrics(
         val records: Int,
         val signalAccuracy: Double,
@@ -40,34 +31,52 @@ object TransitionPredictionReportSupport {
         )
     }
 
+    /**
+     * Aggregate self-attention from query signal to key signal.
+     *
+     * Each self-attention row already sums to one. We first sum a row's weights by key signal and
+     * then average those rows by query signal. The resulting heatmap therefore answers e.g.
+     * "when light is the query, how much attention does it assign to dimmer positions?" rather than
+     * merely reflecting how many history positions happened to exist in an age bucket.
+     */
     fun renderAttentionHeatmap(
         title: String,
         records: List<TransitionPredictionRecord>,
         signals: List<SignalId>,
         output: Path,
     ) {
-        val matrix = signals.map { DoubleArray(ageBuckets.size) }
-        if (records.isNotEmpty()) {
-            records.forEach { record ->
-                record.attention.forEach { attribution ->
-                    val row = signals.indexOf(attribution.signalId)
+        val matrix = signals.map { DoubleArray(signals.size) }
+        val queryCounts = IntArray(signals.size)
+
+        records.forEach { record ->
+            record.attention
+                .groupBy { it.queryIndex }
+                .values
+                .forEach { queryRow ->
+                    val querySignal = queryRow.firstOrNull()?.querySignalId ?: return@forEach
+                    val row = signals.indexOf(querySignal)
                     if (row < 0) return@forEach
-                    val column = ageBuckets.indexOfFirst { it.contains(attribution.age) }
-                    if (column >= 0) matrix[row][column] += attribution.weight
+                    queryCounts[row]++
+
+                    queryRow.forEach { attribution ->
+                        val column = signals.indexOf(attribution.keySignalId)
+                        if (column >= 0) matrix[row][column] += attribution.weight
+                    }
                 }
-            }
-            matrix.forEach { row ->
-                row.indices.forEach { column -> row[column] /= records.size.toDouble() }
-            }
+        }
+
+        matrix.forEachIndexed { row, values ->
+            val count = queryCounts[row]
+            if (count > 0) values.indices.forEach { column -> values[column] /= count.toDouble() }
         }
 
         HeatmapRenderer().render(
             title = title,
-            rowLabels = signals.map { it.value },
-            columnLabels = ageBuckets.map { it.label },
+            rowLabels = signals.map { "query: ${it.value}" },
+            columnLabels = signals.map { "attends to: ${it.value}" },
             values = matrix,
             output = output,
-            valueFormatter = { value -> "%.3f".format(value) },
+            valueFormatter = { value -> "%.1f%%".format(value * 100.0) },
         )
     }
 
@@ -97,13 +106,5 @@ object TransitionPredictionReportSupport {
             output = output,
             valueFormatter = { value -> "%.0f%%".format(value * 100.0) },
         )
-    }
-
-    private data class AgeBucket(
-        val label: String,
-        val fromInclusive: Duration,
-        val toExclusive: Duration,
-    ) {
-        fun contains(age: Duration): Boolean = age >= fromInclusive && age < toExclusive
     }
 }
