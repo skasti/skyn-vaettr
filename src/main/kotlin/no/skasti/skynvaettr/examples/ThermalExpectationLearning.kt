@@ -13,14 +13,17 @@ class ThermalExpectationLearning(
     val world: ThermalExpectationScenario = ThermalExpectationScenario(),
 ) {
     val sampleStore = InMemorySampleStore()
-    val graph = SensingProcessingGraph(sampleStore = sampleStore)
     private val signalEmbedder = SignalIdentityEmbedder()
     val decoder = TransitionPredictionDecoder(signalEmbedder)
     val model = LearnedAttentionTransitionModel(
         signalEmbeddingDimensions = signalEmbedder.dimensions,
         seed = 17,
     )
-    val predictionTrainer = TransitionPredictionTrainer(model, decoder)
+    val graph = SensingProcessingGraph(
+        sampleStore = sampleStore,
+        models = listOf(model),
+    )
+    val predictionTrainer = TransitionPredictionTrainer(decoder)
     val vaettr = Vaettr(
         sampleStore = sampleStore,
         graph = graph,
