@@ -18,7 +18,8 @@ import no.skasti.skynvaettr.signals.SignalId
  * Training weight is supplied by [AdaptiveObjectiveWeights], shared with other objectives such as
  * [TransitionTrainer]. Objective usefulness is scored relative to a persistence baseline rather than
  * by raw accuracy, so an objective receives credit only when it predicts change better than "stay at
- * the previous value".
+ * the previous value". The current example is weighted from previously observed skill; its own
+ * outcome is recorded only after training so the target cannot influence its own weight.
  */
 class ObservationTrainer(
     private val objectiveWeights: AdaptiveObjectiveWeights = AdaptiveObjectiveWeights(),
@@ -59,6 +60,13 @@ class ObservationTrainer(
             val observedSample = latestSamples[key.signalId] ?: return@forEach
             val observed = observedSample.value as Double
             if (abs(observed - previous.baseline) > minimumChange) {
+                val weight = objectiveWeights.weight(key.signalId, LearningObjective.Continuous)
+                previous.model.train(
+                    previous.input,
+                    previous.decoder.trainingTarget(observed),
+                    weight = weight,
+                )
+                trainingExampleCount++
                 objectiveWeights.record(
                     signalId = key.signalId,
                     objective = LearningObjective.Continuous,
@@ -66,12 +74,6 @@ class ObservationTrainer(
                     baseline = previous.baseline,
                     observed = observed,
                 )
-                previous.model.train(
-                    previous.input,
-                    previous.decoder.trainingTarget(observed),
-                    weight = objectiveWeights.weight(key.signalId, LearningObjective.Continuous),
-                )
-                trainingExampleCount++
             }
             pending.remove(key)
         }
