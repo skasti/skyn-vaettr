@@ -4,7 +4,7 @@ import no.skasti.skynvaettr.Vaettr
 import no.skasti.skynvaettr.models.LearnedAttentionTransitionModel
 import no.skasti.skynvaettr.models.TransitionPredictionDecoder
 import no.skasti.skynvaettr.representation.SignalIdentityEmbedder
-import no.skasti.skynvaettr.runtime.SensingProcessingGraph
+import no.skasti.skynvaettr.runtime.TransitionPredictionProcessingGraph
 import no.skasti.skynvaettr.signals.InMemorySampleStore
 import no.skasti.skynvaettr.training.TransitionPredictionTrainer
 
@@ -19,11 +19,12 @@ class ThermalExpectationLearning(
         signalEmbeddingDimensions = signalEmbedder.dimensions,
         seed = 17,
     )
-    val graph = SensingProcessingGraph(
+    val graph = TransitionPredictionProcessingGraph(
         sampleStore = sampleStore,
-        models = listOf(model),
+        model = model,
+        decoder = decoder,
     )
-    val predictionTrainer = TransitionPredictionTrainer(decoder)
+    val predictionTrainer = TransitionPredictionTrainer()
     val vaettr = Vaettr(
         sampleStore = sampleStore,
         graph = graph,
