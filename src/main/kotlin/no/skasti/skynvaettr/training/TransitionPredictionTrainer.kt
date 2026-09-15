@@ -4,7 +4,6 @@ import java.time.Duration
 import java.time.Instant
 import no.skasti.skynvaettr.expectations.Prediction
 import no.skasti.skynvaettr.runtime.ProcessingGraph
-import no.skasti.skynvaettr.runtime.SensoryPosition
 import no.skasti.skynvaettr.runtime.TransitionPredictionExecution
 import no.skasti.skynvaettr.runtime.TransitionPredictionSource
 import no.skasti.skynvaettr.signals.Sample
@@ -25,20 +24,23 @@ data class TransitionPredictionRecord(
         get() = prediction.signal.id == actualSignal
 }
 
+/** One cell from the self-attention matrix, labeled with symbolic metadata for diagnostics only. */
 data class AttentionAttribution(
-    val signalId: SignalId,
-    val age: Duration,
+    val queryIndex: Int,
+    val querySignalId: SignalId,
+    val queryAge: Duration,
+    val keyIndex: Int,
+    val keySignalId: SignalId,
+    val keyAge: Duration,
     val weight: Double,
 )
 
 /**
  * Supervision for graph-produced next-transition predictions.
  *
- * Inference belongs entirely to [TransitionPredictionSource]: the graph detects the meaningful
- * source transition, constructs Q/K/V input, runs the model and decodes a [Prediction]. This trainer
- * only keeps the previous completed execution pending. When the graph later produces another
- * transition execution, that transition is the observed target for the previous prediction and the
- * exact model/input pair that produced it is trained.
+ * Inference belongs entirely to [TransitionPredictionSource]. This trainer keeps the previous
+ * completed execution pending; when the graph later produces another transition execution, that
+ * observed transition becomes the training target for the exact previous model/input pair.
  */
 class TransitionPredictionTrainer : Trainer {
     private var pending: TransitionPredictionExecution? = null
@@ -78,14 +80,30 @@ class TransitionPredictionTrainer : Trainer {
 
     private fun attentionAttribution(execution: TransitionPredictionExecution): List<AttentionAttribution> {
         val formedAt = execution.sourceTransition.current.timestamp
-        return execution.historyPositions
-            .zip(execution.attentionWeights.asIterable())
-            .map { (position: SensoryPosition, weight: Double) ->
-                AttentionAttribution(
-                    signalId = position.signalId,
-                    age = Duration.between(position.timestamp, formedAt).coerceAtLeast(Duration.ZERO),
-                    weight = weight,
-                )
+        val positions = execution.historyPositions
+        require(execution.attentionWeights.size == positions.size) {
+            "Expected one attention row per sensory position"
+        }
+
+        return buildList {
+            execution.attentionWeights.forEachIndexed { queryIndex, row ->
+                require(row.size == positions.size) { "Expected one attention weight per key position" }
+                val queryPosition = positions[queryIndex]
+                row.forEachIndexed { keyIndex, weight ->
+                    val keyPosition = positions[keyIndex]
+                    add(
+                        AttentionAttribution(
+                            queryIndex = queryIndex,
+                            querySignalId = queryPosition.signalId,
+                            queryAge = Duration.between(queryPosition.timestamp, formedAt).coerceAtLeast(Duration.ZERO),
+                            keyIndex = keyIndex,
+                            keySignalId = keyPosition.signalId,
+                            keyAge = Duration.between(keyPosition.timestamp, formedAt).coerceAtLeast(Duration.ZERO),
+                            weight = weight,
+                        ),
+                    )
+                }
             }
+        }
     }
 }
