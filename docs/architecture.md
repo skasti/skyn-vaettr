@@ -172,9 +172,9 @@ For the detailed signal model, see [Signals and samples](signals.md). For bounde
 
 The signal model should preserve stable signal identity while allowing integrations to describe signals through open-ended metadata.
 
-The current runtime does not require `Environment` or `Entity`: `Vaettr.sense(...)` receives a list
-of samples directly. `Environment` is the conceptual boundary that provides those samples, while
-`Entity` remains the semantic object they describe.
+The current runtime gives `Vaettr` an `Environment` reference. `Vaettr.update()` asks that
+environment for newly available values, while `Entity` remains the semantic object those values
+describe.
 
 A tentative model is:
 
@@ -194,8 +194,8 @@ classDiagram
 ### Environment
 
 An **Environment** is the external world, system, or simulation that provides Samples to Skynvættr
-and is eventually affected through effectors. In the current runtime, this means providing the
-list passed to `Vaettr.sense(...)`.
+and is eventually affected through effectors. In the current runtime, it provides newly available
+values through `getNew<T>()` when `Vaettr.update()` polls it.
 
 Examples include:
 

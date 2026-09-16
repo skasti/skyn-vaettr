@@ -4,8 +4,9 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Duration
 import java.time.Instant
+import no.skasti.skynvaettr.Vaettr
 import no.skasti.skynvaettr.examples.KitchenLightScenario
-import no.skasti.skynvaettr.signals.Sample
+import no.skasti.skynvaettr.runtime.SampleEntryPoint
 
 /** Renders the kitchen world itself, without involving models, predictions or expectations. */
 object KitchenLightScenarioReport {
@@ -15,13 +16,15 @@ object KitchenLightScenarioReport {
         Files.createDirectories(reportDir)
 
         val world = KitchenLightScenario()
+        val sampleEntryPoint = SampleEntryPoint()
+        val vaettr = Vaettr(world, listOf(sampleEntryPoint))
         val duration = Duration.ofDays(10)
-        val samples = mutableListOf<Sample<*>>()
         world.simulate(
+            vaettr = vaettr,
             duration = duration,
             step = Duration.ofMinutes(5),
-            onSense = samples::addAll,
         )
+        val samples = sampleEntryPoint.sampleStore.get(Instant.EPOCH, Instant.EPOCH.plusNanos(duration.toNanos() + 1))
 
         val finalDayStart = Instant.EPOCH.plus(Duration.ofDays(9))
         val finalDayEnd = Instant.EPOCH.plus(duration)

@@ -3,6 +3,8 @@ package no.skasti.skynvaettr.examples
 import java.time.Duration
 import java.time.Instant
 import kotlin.random.Random
+import no.skasti.skynvaettr.Vaettr
+import no.skasti.skynvaettr.environment.InMemoryEnvironment
 import no.skasti.skynvaettr.signals.Sample
 import no.skasti.skynvaettr.signals.Signal
 
@@ -19,17 +21,18 @@ class KitchenLightScenario(
     val light: Signal<Double> = Signal("state.kitchen.light"),
     private val lightDelay: Duration = Duration.ofMinutes(10),
     private val seed: Int = 73,
-) {
+) : InMemoryEnvironment() {
     init {
         require(!lightDelay.isNegative)
     }
 
     fun simulate(
+        vaettr: Vaettr,
         duration: Duration,
         step: Duration,
         start: Instant = Instant.EPOCH,
-        onSense: (List<Sample<*>>) -> Unit,
     ) {
+        require(vaettr.environment === this) { "Vaettr must use this scenario as its environment" }
         require(!duration.isNegative && !duration.isZero)
         require(!step.isNegative && !step.isZero)
 
@@ -52,12 +55,13 @@ class KitchenLightScenario(
                 valueAt(delayedDay, delayedSecondOfDay, schedules)
             }
 
-            onSense(
+            append(
                 listOf(
                     Sample(dimmer, dimmerValue, timestamp),
                     Sample(light, lightValue, timestamp),
                 ),
             )
+            vaettr.update()
         }
     }
 

@@ -1,37 +1,27 @@
 package no.skasti.skynvaettr
 
-import no.skasti.skynvaettr.runtime.ProcessingGraph
-import no.skasti.skynvaettr.runtime.SensingProcessingGraph
-import no.skasti.skynvaettr.signals.InMemorySampleStore
-import no.skasti.skynvaettr.signals.MutableSampleStore
-import no.skasti.skynvaettr.signals.Sample
-import no.skasti.skynvaettr.training.Trainer
+import no.skasti.skynvaettr.environment.Environment
+import no.skasti.skynvaettr.representation.Representation
+import no.skasti.skynvaettr.runtime.EntryPoint
+import no.skasti.skynvaettr.runtime.SampleEntryPoint
 
 /**
  * One running Skynvættr instance.
  *
- * [sense] is the canonical observation ingress for both simulated and live environments. Every
- * received sample is committed to [sampleStore] before the processing graph runs. Trainers are
- * notified only after the graph has completed the synchronous work for the same sense cycle, so
- * they can treat one [sense] call as one completed observation round while reading historical
- * experience from the canonical store when they choose to train.
+ * [update] pulls newly available values from [environment] and processes them through the configured
+ * entrypoints. Each entrypoint consumes only values of its declared input type.
  */
 class Vaettr(
-    val sampleStore: MutableSampleStore = InMemorySampleStore(),
-    graph: ProcessingGraph? = null,
-    private val trainers: List<Trainer> = emptyList(),
+    val environment: Environment,
+    entryPoints: List<EntryPoint<*>> = listOf(SampleEntryPoint()),
 ) {
-    private val graph: ProcessingGraph = graph ?: SensingProcessingGraph(sampleStore)
+    private val entryPoints: List<EntryPoint<*>> = entryPoints.toList()
 
-    constructor(graph: ProcessingGraph) : this(InMemorySampleStore(), graph, emptyList())
+    fun update(): List<Representation> =
+        entryPoints.mapNotNull { entryPoint -> processNew(entryPoint) }
 
-    fun sense(samples: List<Sample<*>>) {
-        if (samples.isEmpty()) return
-
-        sampleStore.append(samples)
-        graph.sense(samples)
-        trainers.forEach { it.onSenseCompleted(samples) }
+    private fun <T : Any> processNew(entryPoint: EntryPoint<T>): Representation? {
+        val items = environment.getNew(entryPoint.inputType)
+        return if (items.isEmpty()) null else entryPoint.process(items)
     }
-
-    fun sense(sample: Sample<*>) = sense(listOf(sample))
 }

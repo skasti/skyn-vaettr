@@ -8,6 +8,7 @@ import no.skasti.skynvaettr.Vaettr
 import no.skasti.skynvaettr.examples.ThermalExpectationScenario
 import no.skasti.skynvaettr.expectations.Expectation
 import no.skasti.skynvaettr.expectations.ExpectationResult
+import no.skasti.skynvaettr.runtime.SampleEntryPoint
 import no.skasti.skynvaettr.signals.Sample
 
 /** Renders the inspectable report for the minimal thermal expectation example. */
@@ -17,20 +18,20 @@ object ThermalExpectationReport {
         val reportDir = Path.of(args.firstOrNull() ?: "build/reports/examples/thermal-expectation")
         Files.createDirectories(reportDir)
 
-        val vaettr = Vaettr()
         val world = ThermalExpectationScenario()
+        val sampleEntryPoint = SampleEntryPoint()
+        val vaettr = Vaettr(world, listOf(sampleEntryPoint))
         val duration = Duration.ofDays(1)
         val reportStart = Instant.EPOCH
         val reportEnd = reportStart.plus(duration)
 
         world.simulate(
+            vaettr = vaettr,
             duration = duration,
             step = Duration.ofMinutes(5),
-        ) { samples ->
-            vaettr.sense(samples)
-        }
+        )
 
-        val samples = vaettr.sampleStore.get(reportStart, reportEnd.plusNanos(1))
+        val samples = sampleEntryPoint.sampleStore.get(reportStart, reportEnd.plusNanos(1))
         val renderer = SampleChartRenderer()
         val worldSeries = listOf(
             SampleChartRenderer.Series(world.outdoorTemperature.id, "Outdoor temperature"),
