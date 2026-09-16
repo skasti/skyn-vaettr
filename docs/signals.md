@@ -37,7 +37,7 @@ Signal ids must be globally stable within the runtime. Metadata may evolve, but 
 
 Signal metadata is intentionally open-ended.
 
-The core does not currently prescribe concepts such as `Channel`, units, device classes, source types, ranges, or semantic categories as first-class abstractions. Integrations can attach the metadata that is useful for their domain.
+The core does not currently prescribe concepts such as `Channel`, units, device classes, origin types, ranges, or semantic categories as first-class abstractions. Integrations can attach the metadata that is useful for their domain.
 
 This is deliberate for two reasons:
 
@@ -70,29 +70,43 @@ A sample does **not** say that the value remains current until another sample ar
 
 This temporal neutrality is important. Some signals may describe continuously changing measurements, others may represent sparse events, and still others may eventually need stateful or impulse-like semantics. Those distinctions should be introduced only when experiments show that the runtime needs them.
 
+## Signal ingress and timestamp normalization
+
+Signal ingress may normalize timestamps before samples are persisted when an environment or signal
+requires a common temporal resolution. For example, an ingress policy that rounds to the nearest
+whole second maps `10:00:01.345` to `10:00:01`, while `10:00:01.556` and `10:00:01.789` both map
+to `10:00:02`. Samples mapped to the same timestamp are grouped under that timestamp, subject to an
+explicit collision policy.
+
+Normalization can therefore remove the ordering between events that fall into the same timestamp
+bucket. The current sample model has no separate sequence number or other mechanism for retaining
+that order, so normalization should not be applied to signals whose event ordering matters until
+such a mechanism exists.
+
+Normalization is environment- or signal-specific rather than an implicit property of `Sample`. Signals
+that require the actual observation time, such as event-driven signals, should retain their
+original timestamps.
+
 ## Signal history
 
 Historical samples are the canonical record of sensed experience.
 
 Models may derive many different representations from the same history:
 
-```text
-Signal definitions + Samples
-          |
-          +--> normalization / preprocessing
-          |
-          +--> learned signal encoder
-          |
-          +--> temporal encoder
-          |
-          +--> model-specific features or latent representations
+```mermaid
+flowchart TB
+    INPUT[Signal definitions and samples]
+    INPUT --> NORMALIZE[Normalization / preprocessing]
+    INPUT --> LEARNED[Learned signal encoder]
+    INPUT --> TEMPORAL[Temporal encoder]
+    INPUT --> FEATURES[Model-specific features or latent representations]
 ```
 
 The raw signal history should remain independent of any particular model representation so that historical experience can be reinterpreted when encoders, architectures, normalization strategies, or training objectives change.
 
 ## SampleStore
 
-`SampleStore` is the generic source of historical samples. It deliberately knows nothing about episodes, training, resampling, or model state.
+`SampleStore` is the generic provider of historical samples. It deliberately knows nothing about episodes, training, resampling, or model state.
 
 Its core query is:
 
@@ -134,14 +148,14 @@ A future encoder may combine information such as:
 
 Conceptually:
 
-```text
-Signal metadata + value + temporal context
-                  |
-                  v
-               encoder
-                  |
-                  v
-       learned representation
+```mermaid
+flowchart TB
+    INPUT[Signal metadata + value + temporal context]
+    ENCODER[Encoder]
+    REPRESENTATION[Learned representation]
+
+    INPUT --> ENCODER
+    ENCODER --> REPRESENTATION
 ```
 
 For continuous values, arbitrary tokenization or bucketing is not assumed. A model may encode numerical values directly while separately learning representations of signal identity and metadata.

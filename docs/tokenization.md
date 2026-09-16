@@ -20,14 +20,14 @@ A tokenizer answers **which lexical units are present**. A token encoder answers
 
 For example:
 
-```text
-sensor.kontor_presence_temperature
-              |
-              v
-[ sensor, kontor, presence, temperature ]
-              |
-              v
-     one fixed-width vector per token
+```mermaid
+flowchart TB
+    SIGNAL["sensor.kontor_presence_temperature"]
+    TOKENS["sensor, kontor, presence, temperature"]
+    REPRESENTATION[One fixed-width vector per token]
+
+    SIGNAL --> TOKENS
+    TOKENS --> REPRESENTATION
 ```
 
 Keeping these stages separate avoids making a vocabulary lookup the only possible representation. A model may still use `Vocabulary` and `TokenId`, but it may instead use a compositional encoder that can represent a token that did not exist when the model was created.

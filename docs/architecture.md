@@ -34,7 +34,7 @@ The architecture is guided by a few core principles:
    Most environmental changes should not require expensive reasoning. Policies and lower-cost processing should determine what deserves further attention.
 
 8. **Uncertainty is expected**  
-   Different sources may disagree and observations may be incomplete. The architecture should leave room for uncertainty without prescribing how it must be represented.
+   Different signal origins may disagree and observations may be incomplete. The architecture should leave room for uncertainty without prescribing how it must be represented.
 
 9. **Subsystem cadence should be stable**  
    Individual sensing, perception, maintenance, and reasoning subsystems may each operate on their own cadence. These intervals should generally be explicit and stable rather than continuously adjusted as a proxy for attention.
@@ -73,10 +73,6 @@ This diagram is intentionally circular. The system does not process one isolated
 ## Core interaction loop
 
 The current architecture deliberately keeps the cognitive path broad.
-
-```text
-Environment -> Sensing -> Processing / internal state -> Behaviour -> Environment
-```
 
 ```mermaid
 flowchart LR
@@ -172,39 +168,43 @@ Whether concepts such as intent, goal, plan, expectation, or action become expli
 
 For the detailed signal model, see [Signals and samples](signals.md). For bounded experience used in training and replay, see [Episodes](episodes.md).
 
-## Signals, samples, entities, and sources
+## Signals, samples, entities, and environments
 
 The signal model should preserve stable signal identity while allowing integrations to describe signals through open-ended metadata.
+
+The current runtime does not require `Environment` or `Entity`: `Vaettr.sense(...)` receives a list
+of samples directly. `Environment` is the conceptual boundary that provides those samples, while
+`Entity` remains the semantic object they describe.
 
 A tentative model is:
 
 ```mermaid
 classDiagram
     class Environment
-    class Source
     class Entity
     class Signal
     class Sample
 
-    Environment "1" o-- "*" Source
-    Environment "1" o-- "*" Entity
-    Source "1" --> "*" Signal : defines
-    Signal "1" --> "*" Sample : sampled as
+    Environment "1" --> "*" Entity : contains
+    Environment "1" --> "*" Sample : provides
+    Entity "1" --> "*" Signal : defines
+    Sample "*" --> "1" Signal : references by SignalId
 ```
 
-### Source
+### Environment
 
-A **Source** is something capable of producing signals.
+An **Environment** is the external world, system, or simulation that provides Samples to Skynvættr
+and is eventually affected through effectors. In the current runtime, this means providing the
+list passed to `Vaettr.sense(...)`.
 
 Examples include:
 
-- a physical sensor;
-- a Home Assistant integration;
-- a camera perception model;
-- an operating-system telemetry collector;
-- an API;
-- an event stream;
-- another external system.
+- a home automation system;
+- an infrastructure monitoring system;
+- a robotic system;
+- a software system or service;
+- a simulation;
+- an external API or event stream.
 
 ### Entity
 
@@ -214,11 +214,17 @@ Within the runtime model, `Entity` refers to something in the environment that a
 
 Examples include a person, animal, room, machine, application, service, vehicle, or other meaningful object.
 
+An Entity may define the Signals associated with it. Samples for those signals arrive from the
+Environment rather than being produced by the Entity abstraction itself. A Sample is conceptually
+linked to its Signal through the stable `SignalId`. The current Kotlin API stores a `Signal<T>` on
+each Sample, which carries that identity directly; the stable identifier is the important
+architectural relationship.
+
 ### Signal metadata
 
 Semantic information about a signal should initially be represented as metadata rather than as a fixed `Channel` abstraction.
 
-Examples may include units, device classes, source information, human-readable names, ranges, quality descriptors, or integration-specific classifications. This keeps the core domain-independent and allows later experiments to determine which concepts, if any, deserve promotion to first-class abstractions.
+Examples may include units, device classes, origin information, human-readable names, ranges, quality descriptors, or integration-specific classifications. This keeps the core domain-independent and allows later experiments to determine which concepts, if any, deserve promotion to first-class abstractions.
 
 ### Signal history and current state
 
@@ -245,7 +251,7 @@ This is analogous to learned token embeddings in language models, but sensor dat
 A model may therefore encode a signal using some combination of:
 
 - signal identity and metadata;
-- source;
+- origin;
 - associated entity;
 - value or event payload;
 - timestamp or temporal encoding;
@@ -254,20 +260,26 @@ A model may therefore encode a signal using some combination of:
 
 Conceptually:
 
-```text
-Signal + context -> encoder -> learned representation
+```mermaid
+flowchart LR
+    INPUT[Signal + context]
+    ENCODER[Encoder]
+    REPRESENTATION[Learned representation]
+
+    INPUT --> ENCODER
+    ENCODER --> REPRESENTATION
 ```
 
 For a single signal, an encoder might produce a vector representation:
 
-```text
-temperature(room, 22.4 C, time=t, ...)
-        |
-        v
-      encoder
-        |
-        v
-[ learned latent representation ]
+```mermaid
+flowchart TB
+    INPUT["temperature(room, 22.4 C, time=t, ...)"]
+    ENCODER[Encoder]
+    REPRESENTATION[Learned latent representation]
+
+    INPUT --> ENCODER
+    ENCODER --> REPRESENTATION
 ```
 
 For continuous values, the default assumption should be that models can encode the value directly rather than requiring arbitrary discretization into token-like buckets. Discretization may still be useful for particular models or experiments, but it is a modelling decision rather than a property of the signal itself.
@@ -278,8 +290,10 @@ Many useful properties of sensed environments are expressed by change over time 
 
 For example:
 
-```text
-21 -> 22 -> 23 -> 24 -> 25 C over 20 minutes
+```mermaid
+flowchart LR
+    T1[21 C] --> T2[22 C] --> T3[23 C] --> T4[24 C] --> T5[25 C]
+    T1 -.-> WINDOW[Over 20 minutes]
 ```
 
 contains information that is not represented by the final value alone.
@@ -318,14 +332,19 @@ Persisted embeddings or latent states should therefore identify the model and re
 
 Conceptually:
 
-```text
-Signal history                    model-specific artifacts
-      |                                     |
-      +----> encoder v1 ----> embedding v1  |
-      |                                     |
-      +----> encoder v2 ----> embedding v2  |
-      |                                     |
-      +----> other model -------------------+
+```mermaid
+flowchart LR
+    HISTORY[Signal history]
+
+    subgraph ARTIFACTS[Model-specific artifacts]
+        ENCODER1[Encoder v1] --> EMBEDDING1[Embedding v1]
+        ENCODER2[Encoder v2] --> EMBEDDING2[Embedding v2]
+        OTHER[Other model] --> OTHER_OUTPUT[Model artifact]
+    end
+
+    HISTORY --> ENCODER1
+    HISTORY --> ENCODER2
+    HISTORY --> OTHER
 ```
 
 This separation allows future models to reinterpret historical experience without losing information through an earlier representation choice.
@@ -413,9 +432,9 @@ Policies may consider:
 - absolute thresholds;
 - rate of change;
 - elapsed time;
-- source reliability;
+- origin reliability;
 - signal confidence;
-- disagreement between sources;
+- disagreement between inputs;
 - current context;
 - combinations of signals;
 - expected versus actual state.
@@ -426,7 +445,7 @@ This allows most uninteresting changes to be processed without invoking higher-c
 
 Skynvættr should not depend on one global perception interval.
 
-Different subsystems may have different natural cadences. A temperature source might be sampled periodically, a local classifier may run frequently, a maintenance process may run much less often, and an event-driven source may have no polling interval at all.
+Different subsystems may have different natural cadences. A temperature feed might be sampled periodically, a local classifier may run frequently, a maintenance process may run much less often, and an event-driven input may have no polling interval at all.
 
 Where an interval is appropriate, the default model is that it belongs to the individual subsystem and remains as stable as practical.
 
@@ -697,39 +716,40 @@ Skynvættr should preserve the useful concepts discovered through those experime
 
 The implementation should remain free to evolve, but the conceptual boundaries suggest a decomposition similar to:
 
-```text
-skyn-vaettr
-|
-+-- core
-|   +-- entities
-|   +-- signals
-|   +-- channels
-|   +-- observations
-|   +-- time
-|
-+-- perception
-|   +-- policies
-|   +-- change-detection
-|   +-- attention
-|   +-- pipeline
-|
-+-- world
-|   +-- state
-|   +-- history
-|   +-- memory
-|
-+-- mind
-|   +-- reasoning
-|   +-- models
-|   +-- orchestration
-|   +-- drives
-|
-+-- actions
-|   +-- capabilities
-|   +-- effectors
-|
-+-- integrations
-    +-- ...
+```mermaid
+flowchart TB
+    ROOT[skyn-vaettr]
+
+    ROOT --> CORE[core]
+    CORE --> CORE_ENTITIES[entities]
+    CORE --> CORE_SIGNALS[signals]
+    CORE --> CORE_CHANNELS[channels]
+    CORE --> CORE_OBSERVATIONS[observations]
+    CORE --> CORE_TIME[time]
+
+    ROOT --> PERCEPTION[perception]
+    PERCEPTION --> PERCEPTION_POLICIES[policies]
+    PERCEPTION --> PERCEPTION_CHANGE[change-detection]
+    PERCEPTION --> PERCEPTION_ATTENTION[attention]
+    PERCEPTION --> PERCEPTION_PIPELINE[pipeline]
+
+    ROOT --> WORLD[world]
+    WORLD --> WORLD_STATE[state]
+    WORLD --> WORLD_HISTORY[history]
+    WORLD --> WORLD_MEMORY[memory]
+
+    ROOT --> MIND[mind]
+    MIND --> MIND_REASONING[reasoning]
+    MIND --> MIND_MODELS[models]
+    MIND --> MIND_ORCHESTRATION[orchestration]
+    MIND --> MIND_DRIVES[drives]
+
+    ROOT --> ACTIONS[actions]
+    ACTIONS --> ACTIONS_CAPABILITIES[capabilities]
+    ACTIONS --> ACTIONS_EFFECTORS[effectors]
+
+    ROOT --> INTEGRATIONS[integrations]
+    INTEGRATIONS --> MORE[...]
 ```
 
 This is not a prescribed package structure. Creating empty modules merely to mirror this diagram would be premature. The value of the decomposition is to keep responsibilities separate as concrete types emerge.
@@ -753,7 +773,7 @@ This sequence deliberately avoids starting with an LLM abstraction. Doing so wou
 
 Several concepts remain intentionally unresolved:
 
-- What is the exact ownership relationship between sources, entities, and signals?
+- What is the exact ownership relationship between environments, entities, and signals?
 - Should observations be immutable event records?
 - Which internal-state representations prove useful enough to become core abstractions?
 - Which parts of internal context should be durable across restarts?
