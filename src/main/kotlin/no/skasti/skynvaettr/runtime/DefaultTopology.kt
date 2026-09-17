@@ -1,5 +1,7 @@
 package no.skasti.skynvaettr.runtime
 
+import no.skasti.skynvaettr.signals.SampleEntryPoint
+
 import no.skasti.skynvaettr.environment.Environment
 import kotlin.reflect.KClass
 import no.skasti.skynvaettr.topology.Node

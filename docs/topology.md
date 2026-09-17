@@ -115,6 +115,12 @@ not require a node to assume that receipt and processing always use the same cal
 
 An attention node is a useful example because it needs three distinct input ports:
 
+`AttentionNode` is implemented in `attention` and accepts an `Attention` implementation. Its ports
+are `q`, `k`, `v`, and the output `attention`. It consumes one representation from each input,
+calls `Attention.apply`, clears the inputs after successful computation, and emits `result.output`.
+Computation failures retain the inputs. Failures in downstream delivery occur after inputs have
+been cleared. Q/K/V projections can be supplied by separate upstream nodes.
+
 ```mermaid
 flowchart LR
     Q[Queries] --> QR[Queries port] 

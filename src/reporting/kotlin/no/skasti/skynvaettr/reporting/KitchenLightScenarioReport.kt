@@ -7,7 +7,7 @@ import java.time.Instant
 import no.skasti.skynvaettr.Vaettr
 import no.skasti.skynvaettr.runtime.DefaultTopology
 import no.skasti.skynvaettr.examples.KitchenLightScenario
-import no.skasti.skynvaettr.runtime.SampleEntryPoint
+import no.skasti.skynvaettr.signals.SampleEntryPoint
 
 /** Renders the kitchen world itself, without involving models, predictions or expectations. */
 object KitchenLightScenarioReport {

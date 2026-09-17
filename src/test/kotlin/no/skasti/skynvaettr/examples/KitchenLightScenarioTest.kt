@@ -7,7 +7,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import no.skasti.skynvaettr.Vaettr
 import no.skasti.skynvaettr.runtime.DefaultTopology
-import no.skasti.skynvaettr.runtime.SampleEntryPoint
+import no.skasti.skynvaettr.signals.SampleEntryPoint
 
 class KitchenLightScenarioTest {
     @Test

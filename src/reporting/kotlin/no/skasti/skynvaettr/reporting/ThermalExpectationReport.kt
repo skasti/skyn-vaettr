@@ -9,7 +9,7 @@ import no.skasti.skynvaettr.runtime.DefaultTopology
 import no.skasti.skynvaettr.examples.ThermalExpectationScenario
 import no.skasti.skynvaettr.expectations.Expectation
 import no.skasti.skynvaettr.expectations.ExpectationResult
-import no.skasti.skynvaettr.runtime.SampleEntryPoint
+import no.skasti.skynvaettr.signals.SampleEntryPoint
 import no.skasti.skynvaettr.signals.Sample
 
 /** Renders the inspectable report for the minimal thermal expectation example. */

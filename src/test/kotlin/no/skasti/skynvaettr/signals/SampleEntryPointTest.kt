@@ -1,4 +1,4 @@
-package no.skasti.skynvaettr.runtime
+package no.skasti.skynvaettr.signals
 
 import java.time.Duration
 import java.time.Instant
@@ -6,8 +6,6 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import no.skasti.skynvaettr.representation.SignalIdentityEmbedder
-import no.skasti.skynvaettr.signals.Sample
-import no.skasti.skynvaettr.signals.Signal
 
 class SampleEntryPointTest {
     @Test

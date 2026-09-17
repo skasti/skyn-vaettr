@@ -1,4 +1,6 @@
-package no.skasti.skynvaettr.runtime
+package no.skasti.skynvaettr.signals
+
+import no.skasti.skynvaettr.runtime.SingleSlotPort
 
 import java.time.Duration
 import java.time.Instant
@@ -8,11 +10,6 @@ import no.skasti.skynvaettr.representation.Embedding
 import no.skasti.skynvaettr.representation.Embedder
 import no.skasti.skynvaettr.representation.Representation
 import no.skasti.skynvaettr.representation.SignalIdentityEmbedder
-import no.skasti.skynvaettr.signals.InMemorySampleStore
-import no.skasti.skynvaettr.signals.MutableSampleStore
-import no.skasti.skynvaettr.signals.Sample
-import no.skasti.skynvaettr.signals.SampleStore
-import no.skasti.skynvaettr.signals.SignalId
 import no.skasti.skynvaettr.topology.EntryPoint
 import no.skasti.skynvaettr.topology.Port
 
