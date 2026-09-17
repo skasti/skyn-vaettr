@@ -140,7 +140,7 @@ class TopologyRendererTest {
     }
 
     private class TestNode : Node {
-        override val name = "Test"
+        override val name = "TestNode"
         val port = SingleSlotPort<Int>("port")
         override val ports = listOf(port)
     }

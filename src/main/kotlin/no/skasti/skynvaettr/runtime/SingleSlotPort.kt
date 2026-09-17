@@ -32,7 +32,7 @@ class ReceiveEvent {
  * A second received representation fails until [clear] is called. This deliberately prevents
  * unprocessed input from being overwritten silently.
  */
-class SingleSlotPort<T>(
+class SingleSlotPort<T: Any>(
     override val name: String,
 ) : Port<T> {
     private val connections = mutableListOf<Synapse<T>>()

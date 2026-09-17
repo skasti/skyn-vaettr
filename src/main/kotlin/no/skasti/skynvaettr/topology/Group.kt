@@ -16,7 +16,7 @@ interface Group {
         get() = emptyMap()
 
     /** Returns an exposed port by name with the type inferred from the connection site. */
-    fun <T> port(name: String): Port<T> {
+    fun <T: Any> port(name: String): Port<T> {
         val exposed = exposedPorts[name]
             ?: error("Topology group '$this' does not expose a port named '$name'")
         @Suppress("UNCHECKED_CAST")
@@ -24,7 +24,7 @@ interface Group {
     }
 
     /** Bracket form of [port] for concise topology wiring. */
-    operator fun <T> get(name: String): Port<T> = port(name)
+    operator fun <T: Any> get(name: String): Port<T> = port(name)
 
     companion object {
         /** Builds a named group from nodes and exposed ports declared in [configure]. */

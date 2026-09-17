@@ -6,7 +6,7 @@ package no.skasti.skynvaettr.topology
  * A source port may own several synapses, allowing one emitted representation to fan out to
  * multiple target ports.
  */
-class Synapse<T>(
+class Synapse<T: Any>(
     val source: Port<T>,
     val target: Port<T>,
 ) {

@@ -51,6 +51,7 @@ class GroupBuilderTest {
     }
 
     private class TestNode(label: String) : Node {
+        override val name = "TestNode"
         val input = SingleSlotPort<Int>("$label-input")
         val output = SingleSlotPort<Int>("$label-output")
         override val ports: List<Port<*>> = listOf(input, output)

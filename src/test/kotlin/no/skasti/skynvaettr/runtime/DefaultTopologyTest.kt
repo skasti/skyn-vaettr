@@ -88,6 +88,7 @@ class DefaultTopologyTest {
         val entryPoint = RecordingEntryPoint()
         val input = SingleSlotPort<Representation>("input")
         val node = object : Node {
+            override val name = "TestNode"
             override val ports: List<Port<*>> = listOf(input)
         }
         entryPoint.output.connectTo(input)
@@ -166,6 +167,7 @@ class DefaultTopologyTest {
     }
 
     private class RecordingEntryPoint : EntryPoint<Int> {
+        override val name = "RecordingEntryPoint"
         override val inputType = Int::class
         val received = mutableListOf<List<Int>>()
         val output = SingleSlotPort<Representation>("output")
@@ -179,6 +181,7 @@ class DefaultTopologyTest {
     }
 
     private class StringEntryPoint : EntryPoint<String> {
+        override val name = "StringEntryPoint"
         override val inputType = String::class
         val received = mutableListOf<List<String>>()
         val output = SingleSlotPort<Representation>("output")

@@ -68,6 +68,7 @@ class SingleSlotReceiverTest {
         Representation.of(Embedding.of(value))
 
     private class RecordingNode : Node {
+        override val name = "RecordingNode"
         val received = mutableListOf<Port<*>>()
         val input = SingleSlotPort<Representation>("input")
         override val ports: List<Port<*>>
@@ -79,6 +80,7 @@ class SingleSlotReceiverTest {
     }
 
     private class FailingNode : Node {
+        override val name = "FailingNode"
         val input = SingleSlotPort<Representation>("input")
         override val ports: List<Port<*>>
             get() = listOf(input)

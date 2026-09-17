@@ -22,7 +22,7 @@ class GroupBuilder internal constructor(
     }
 
     /** Exposes an internal port as part of the group's named boundary. */
-    fun <T> expose(name: String, port: Port<T>): Port<T> {
+    fun <T: Any> expose(name: String, port: Port<T>): Port<T> {
         require(name.isNotBlank()) { "exposed port name must not be blank" }
         require(exposedPorts.put(name, port) == null) {
             "exposed port name '$name' is already registered"
