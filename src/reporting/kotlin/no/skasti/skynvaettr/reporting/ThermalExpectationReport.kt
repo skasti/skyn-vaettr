@@ -5,6 +5,7 @@ import java.nio.file.Path
 import java.time.Duration
 import java.time.Instant
 import no.skasti.skynvaettr.Vaettr
+import no.skasti.skynvaettr.runtime.DefaultTopology
 import no.skasti.skynvaettr.examples.ThermalExpectationScenario
 import no.skasti.skynvaettr.expectations.Expectation
 import no.skasti.skynvaettr.expectations.ExpectationResult
@@ -20,7 +21,7 @@ object ThermalExpectationReport {
 
         val world = ThermalExpectationScenario()
         val sampleEntryPoint = SampleEntryPoint()
-        val vaettr = Vaettr(world, listOf(sampleEntryPoint))
+        val vaettr = Vaettr(world, DefaultTopology(world, listOf(sampleEntryPoint)))
         val duration = Duration.ofDays(1)
         val reportStart = Instant.EPOCH
         val reportEnd = reportStart.plus(duration)

@@ -5,6 +5,7 @@ import java.nio.file.Path
 import java.time.Duration
 import java.time.Instant
 import no.skasti.skynvaettr.Vaettr
+import no.skasti.skynvaettr.runtime.DefaultTopology
 import no.skasti.skynvaettr.examples.KitchenLightScenario
 import no.skasti.skynvaettr.runtime.SampleEntryPoint
 
@@ -17,7 +18,7 @@ object KitchenLightScenarioReport {
 
         val world = KitchenLightScenario()
         val sampleEntryPoint = SampleEntryPoint()
-        val vaettr = Vaettr(world, listOf(sampleEntryPoint))
+        val vaettr = Vaettr(world, DefaultTopology(world, listOf(sampleEntryPoint)))
         val duration = Duration.ofDays(10)
         world.simulate(
             vaettr = vaettr,

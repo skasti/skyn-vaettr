@@ -6,6 +6,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import no.skasti.skynvaettr.Vaettr
+import no.skasti.skynvaettr.runtime.DefaultTopology
 import no.skasti.skynvaettr.runtime.SampleEntryPoint
 
 class ThermalExpectationScenarioTest {
@@ -13,7 +14,7 @@ class ThermalExpectationScenarioTest {
     fun `vaettr can accumulate a simple thermal world as learning experience`() {
         val world = ThermalExpectationScenario()
         val sampleEntryPoint = SampleEntryPoint()
-        val vaettr = Vaettr(world, listOf(sampleEntryPoint))
+        val vaettr = Vaettr(world, DefaultTopology(world, listOf(sampleEntryPoint)))
 
         world.simulate(
             vaettr = vaettr,

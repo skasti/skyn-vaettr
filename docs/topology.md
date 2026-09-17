@@ -8,11 +8,11 @@ implementation is expanded.
 
 The current runtime has two separate concerns:
 
-- `Environment` provides newly available values to `Vaettr`;
+- `Environment` provides newly available values to `DefaultTopology`;
 - `EntryPoint<T>` processes values of one external type into representations.
 
-`Vaettr.update()` polls the environment and invokes its configured entrypoints. The topology
-after entrypoints is not yet connected to `Vaettr`.
+`Vaettr.update()` delegates to `Topology.update()`. The initial `DefaultTopology` polls the
+environment once per input type and passes each non-empty batch to all matching entrypoints.
 
 `SampleEntryPoint` stores incoming samples, builds representations from their temporal history,
 and emits them through its output port.
@@ -158,11 +158,11 @@ For example, a sample entrypoint may expose separate ports for:
 - quality or confidence metadata.
 
 The entrypoint decides how the external values are transformed and which outputs it emits. The
-topology decides where those outputs go next. `Vaettr.update()` only orchestrates environment polling
+topology decides where those outputs go next. `DefaultTopology.update()` orchestrates environment polling
 and entrypoint processing; emitted representations continue through connected synapses.
 
-`Vaettr` holds an `Environment` and a private list of typed `EntryPoint<T>` instances. On each
-`update()`, it asks the environment for values newly available for each entrypoint and passes
+`Vaettr` holds an `Environment` and a `Topology`, defaulting to `DefaultTopology(environment)`.
+`DefaultTopology` owns a read-only list of nodes and derives its entrypoints from that list. On each `update()`, it fetches each input type once and passes
 non-empty batches to `EntryPoint.process(...)`. Entrypoints emit representations through their
 output ports; `Vaettr.update()` does not collect or return those representations.
 
@@ -172,7 +172,9 @@ into the processing topology. The topology decides where those outputs go next.
 
 ## Topology ownership
 
-A future topology object should own:
+`Topology` exposes `nodes`, a derived read-only `entryPoints` list, and `update()`. The nodes and their
+port connections define the network. `DefaultTopology` owns environment polling and entrypoint dispatch.
+Topology implementations can later take responsibility for:
 
 - nodes;
 - synapses;
