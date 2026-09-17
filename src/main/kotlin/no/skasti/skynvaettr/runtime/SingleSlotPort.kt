@@ -61,6 +61,10 @@ class SingleSlotPort<T>(
         pending = null
     }
 
-    override fun connectTo(target: Port<T>): Synapse<T> =
-        Synapse(source = this, target = target).also(connections::add)
+    override fun connectTo(vararg targets: Port<T>) {
+        require(targets.isNotEmpty()) { "connectTo requires at least one target" }
+        targets.forEach { target ->
+            Synapse(source = this, target = target).also(connections::add)
+        }
+    }
 }

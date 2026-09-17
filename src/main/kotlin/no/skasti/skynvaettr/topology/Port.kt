@@ -18,5 +18,6 @@ interface Port<T> {
 
     fun receive(value: T)
 
-    fun connectTo(target: Port<T>): Synapse<T>
+    /** Connects this port to one or more targets. */
+    fun connectTo(vararg targets: Port<T>)
 }

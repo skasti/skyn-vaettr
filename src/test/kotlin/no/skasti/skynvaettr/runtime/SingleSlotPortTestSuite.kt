@@ -58,16 +58,33 @@ class SingleSlotPortTest {
         val secondInput = SingleSlotPort<Representation>("second-input")
         val representation = representation(1.0)
 
-        val firstSynapse = output.connectTo(firstInput)
-        val secondSynapse = output.connectTo(secondInput)
+        output.connectTo(firstInput)
+        output.connectTo(secondInput)
         output.emit(representation)
 
-        assertEquals(output, firstSynapse.source)
-        assertEquals(firstInput, firstSynapse.target)
-        assertEquals(output, secondSynapse.source)
-        assertEquals(secondInput, secondSynapse.target)
+        assertEquals(listOf(firstInput, secondInput), output.synapses.map { it.target })
         assertEquals(representation, firstInput.pending)
         assertEquals(representation, secondInput.pending)
+    }
+
+    @Test
+    fun `connectTo can declare several targets`() {
+        val output = SingleSlotPort<Representation>("output")
+        val firstInput = SingleSlotPort<Representation>("first-input")
+        val secondInput = SingleSlotPort<Representation>("second-input")
+
+        output.connectTo(firstInput, secondInput)
+
+        assertEquals(listOf(firstInput, secondInput), output.synapses.map { it.target })
+    }
+
+    @Test
+    fun `connectTo rejects an empty target list`() {
+        val output = SingleSlotPort<Representation>("output")
+
+        assertFailsWith<IllegalArgumentException> {
+            output.connectTo()
+        }
     }
 
     @Test

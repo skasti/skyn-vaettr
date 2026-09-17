@@ -40,7 +40,8 @@ A **Port** is a named endpoint owned by a node. A port has both sending and rece
 - `emit(value)` delivers a value through its outgoing synapses;
 - `receive(value)` accepts a value from an incoming synapse;
 - `onReceive` notifies subscribers after a value has been accepted;
-- `synapses` exposes the port's outgoing connections for topology inspection.
+- `synapses` exposes the port's outgoing connections for topology inspection;
+- `connectTo(vararg targets)` creates outgoing synapses.
 
 Buffering policy is deliberately outside the generic port contract. An implementation may retain one
 value, queue values, replace an existing value, or use another policy. Nodes should only depend on the
@@ -156,8 +157,9 @@ The current reference implementation and its report pipeline are described in
 
 ## Topology ownership
 
-`Topology` exposes `nodes`, a derived read-only `entryPoints` list, and `update()`. The nodes and their
-port connections define the network. A topology implementation may take responsibility for:
+`Topology` exposes `nodes`, named `groups`, a derived read-only `entryPoints` list, and `update()`.
+The nodes and their port connections define the network; groups provide named system boundaries for
+composition and inspection. A topology implementation may take responsibility for:
 
 - nodes;
 - synapses;

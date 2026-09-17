@@ -9,9 +9,42 @@ import no.skasti.skynvaettr.representation.Representation
 import no.skasti.skynvaettr.topology.EntryPoint
 import no.skasti.skynvaettr.topology.Node
 import no.skasti.skynvaettr.topology.Port
+import no.skasti.skynvaettr.topology.Group
 import org.junit.jupiter.api.assertDoesNotThrow
 
 class DefaultTopologyTest {
+    @Test
+    fun `builder flattens group nodes and keeps the group boundary`() {
+        val environment = InMemoryEnvironment()
+        val entryPoint = RecordingEntryPoint()
+        val group = TestGroup("signals", entryPoint)
+
+        val topology = DefaultTopology(environment) {
+            add(group)
+        }
+
+        assertEquals(listOf(entryPoint), topology.nodes)
+        assertEquals(listOf(group), topology.groups)
+
+        environment.append(7)
+        topology.update()
+
+        assertEquals(listOf(listOf(7)), entryPoint.received)
+    }
+
+    @Test
+    fun `builder adds standalone nodes through the same add function`() {
+        val environment = InMemoryEnvironment()
+        val entryPoint = RecordingEntryPoint()
+
+        val topology = DefaultTopology(environment) {
+            add(entryPoint)
+        }
+
+        assertEquals(listOf(entryPoint), topology.nodes)
+        assertEquals(emptyList(), topology.groups)
+    }
+
     @Test
     fun `topology retains all nodes and derives entrypoints from them`() {
         val environment = InMemoryEnvironment()
@@ -119,5 +152,13 @@ class DefaultTopologyTest {
             received += items
             output.emit(Representation.of(Embedding.of(items.first().length.toDouble())))
         }
+    }
+
+    private class TestGroup(
+        override val name: String,
+        entryPoint: EntryPoint<*>,
+    ) : Group {
+        val inputPort = entryPoint.ports.first()
+        override val nodes: List<Node> = listOf(entryPoint)
     }
 }
