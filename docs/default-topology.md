@@ -72,13 +72,13 @@ The example reports build the following topology using identity Q/K/V projection
 
 ```mermaid
 flowchart LR
-    S[SampleEntryPoint] --> Q[QueryNode]
-    S --> K[KeyNode]
-    S --> V[ValueNode]
+    S[SampleEntryPoint] --> Q[Query]
+    S --> K[Key]
+    S --> V[Value]
     Q --> AQ[q]
     K --> AK[k]
     V --> AV[v]
-    AQ --> A[AttentionNode]
+    AQ --> A[Attention]
     AK --> A
     AV --> A
 ```
@@ -112,8 +112,9 @@ every connected target belongs to its `nodes` list, nor does it own a separate c
 
 ## Report rendering
 
-The reporting source set uses `TopologyRenderer` to inspect `Topology.nodes`, each node's `ports`, and
-each port's `synapses`. It writes `topology.dot` and invokes Graphviz to produce `topology.png`.
+The reporting source set uses `TopologyRenderer` to inspect `Topology.nodes`, each node's `name` and
+`ports`, and each port's `synapses`. It writes `topology.dot` and invokes Graphviz to produce
+`topology.png`.
 Ports are not drawn as separate nodes; each directed arrow connects the nodes that own the source and
 target ports. `Topology.groups` become Graphviz clusters with the group name as their label. Multiple
 connections between the same pair of nodes are rendered as one arrow, while disconnected nodes remain

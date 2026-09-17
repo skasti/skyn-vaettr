@@ -32,6 +32,7 @@ class SampleEntryPoint(
     private val sampleStore: MutableSampleStore,
     private val signalEmbedder: Embedder<SignalId> = SignalIdentityEmbedder(),
     private val historyAges: List<Duration> = DEFAULT_HISTORY_AGES,
+    override val name: String = "SampleEntryPoint",
 ) : EntryPoint<Sample<*>> {
 
     override val inputType: KClass<Sample<*>> = Sample::class

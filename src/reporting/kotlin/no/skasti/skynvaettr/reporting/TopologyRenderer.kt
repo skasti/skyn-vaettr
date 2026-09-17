@@ -54,7 +54,7 @@ class TopologyRenderer(
             appendAttributeBlock("  graph", style.graphAttributes)
             appendAttributeBlock("  node", style.nodeAttributes)
             appendAttributeBlock("  edge", style.edgeAttributes)
-            fun label(node: Node): String = node.javaClass.simpleName.ifEmpty { "Node" }
+            fun label(node: Node): String = node.name
                 .replace("\\", "\\\\").replace("\"", "\\\"")
                 .replace("\r", "\\r").replace("\n", "\\n")
 

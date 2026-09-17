@@ -14,7 +14,7 @@ data class TopologyGraphStyle(
         "pad" to "0.2",
         "nodesep" to "0.5",
         "ranksep" to "0.8",
-        "splines" to "ortho",
+        "splines" to "curved",
     ),
     val nodeAttributes: Map<String, String> = mapOf(
         "shape" to "box",

@@ -10,6 +10,14 @@ import no.skasti.skynvaettr.runtime.SingleSlotPort
 
 class ProjectionNodeTest {
     @Test
+    fun `projection nodes have descriptive default names`() {
+        assertEquals("Query", QueryNode().name)
+        assertEquals("Key", KeyNode().name)
+        assertEquals("Value", ValueNode().name)
+        assertEquals("Temperature query", QueryNode(name = "Temperature query").name)
+    }
+
+    @Test
     fun `sample representation can fan out through query key and value nodes`() {
         val sample = Representation.of(Embedding.of(1.0, 2.0))
         val source = SingleSlotPort<Representation>("samples")

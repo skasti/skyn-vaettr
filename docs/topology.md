@@ -29,6 +29,9 @@ The topology should:
 A **Node** is a processing component that owns ports and subscribes to receive events from the ports
 whose input it consumes.
 
+Nodes expose a human-readable `name` used by topology tooling. It defaults to the concrete class name,
+but node implementations and instances may provide a more useful label.
+
 The node decides whether to process immediately, wait for other inputs, accumulate state, or take
 some other action. The `onReceive` event only tells the node that a port's input state changed; it
 does not require immediate processing.

@@ -7,5 +7,6 @@ package no.skasti.skynvaettr.topology
  * other ports have values, accumulated, or handled according to another domain-specific policy.
  */
 interface Node {
+    val name: String
     val ports: List<Port<*>>
 }

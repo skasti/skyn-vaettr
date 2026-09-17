@@ -20,6 +20,15 @@ import java.time.Instant
 
 class AttentionNodeTest {
     @Test
+    fun `attention node has a descriptive default name`() {
+        assertEquals("Attention", AttentionNode(ScaledDotProductAttention()).name)
+        assertEquals(
+            "Temporal attention",
+            AttentionNode(ScaledDotProductAttention(), name = "Temporal attention").name,
+        )
+    }
+
+    @Test
     fun `waits for all inputs in any order and consumes a fresh set each round`() {
         val orders = listOf(listOf(0, 1, 2), listOf(0, 2, 1), listOf(1, 0, 2),
             listOf(1, 2, 0), listOf(2, 0, 1), listOf(2, 1, 0))
@@ -85,6 +94,7 @@ class AttentionNodeTest {
         val sink = SingleSlotPort<Representation>("sink")
         node.attention.connectTo(sink)
         val sinkNode = object : Node {
+            override val name = "Sink"
             override val ports = listOf(sink)
         }
         val topology = DefaultTopology(

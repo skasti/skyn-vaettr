@@ -72,6 +72,7 @@ class LinearRepresentationProjection(
 open class ProjectionNode(
     private val role: String,
     private val projection: RepresentationProjection = IdentityRepresentationProjection,
+    override val name: String = role,
 ) : Node {
     val input = SingleSlotPort<Representation>("$role-input")
     val output = SingleSlotPort<Representation>(role)
@@ -93,14 +94,17 @@ open class ProjectionNode(
 /** Produces query representations for an [AttentionNode]. */
 class QueryNode(
     projection: RepresentationProjection = IdentityRepresentationProjection,
-) : ProjectionNode("q", projection)
+    name: String = "Query",
+) : ProjectionNode("q", projection, name)
 
 /** Produces key representations for an [AttentionNode]. */
 class KeyNode(
     projection: RepresentationProjection = IdentityRepresentationProjection,
-) : ProjectionNode("k", projection)
+    name: String = "Key",
+) : ProjectionNode("k", projection, name)
 
 /** Produces value representations for an [AttentionNode]. */
 class ValueNode(
     projection: RepresentationProjection = IdentityRepresentationProjection,
-) : ProjectionNode("v", projection)
+    name: String = "Value",
+) : ProjectionNode("v", projection, name)

@@ -11,7 +11,10 @@ import no.skasti.skynvaettr.topology.Port
  * Inputs are retained if computation fails, and cleared before the output is delivered.
  * Each computation consumes one value from each input; values are not reused across rounds.
  */
-class AttentionNode(private val implementation: Attention) : Node {
+class AttentionNode(
+    private val implementation: Attention,
+    override val name: String = "Attention",
+) : Node {
     val q = SingleSlotPort<Representation>("q")
     val k = SingleSlotPort<Representation>("k")
     val v = SingleSlotPort<Representation>("v")

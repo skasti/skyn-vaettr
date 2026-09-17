@@ -35,6 +35,19 @@ class TopologyRendererTest {
     }
 
     @Test
+    fun `uses a node name instead of its class name`() {
+        val source = NamedNode("Ingress")
+        val target = NamedNode("Attention")
+        source.port.connectTo(target.port)
+
+        val dot = TopologyRenderer().toDot(topology(source, target))
+
+        assertTrue("n0 [label=\"Ingress\"];" in dot)
+        assertTrue("n1 [label=\"Attention\"];" in dot)
+        assertTrue("NamedNode" !in dot)
+    }
+
+    @Test
     fun `rejects a connection to a node omitted from the topology`() {
         val source = TestNode()
         source.port.connectTo(TestNode().port)
@@ -127,6 +140,12 @@ class TopologyRendererTest {
     }
 
     private class TestNode : Node {
+        override val name = "Test"
+        val port = SingleSlotPort<Int>("port")
+        override val ports = listOf(port)
+    }
+
+    private class NamedNode(override val name: String) : Node {
         val port = SingleSlotPort<Int>("port")
         override val ports = listOf(port)
     }
