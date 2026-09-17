@@ -5,6 +5,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import no.skasti.skynvaettr.representation.Embedding
 import no.skasti.skynvaettr.representation.Representation
+import no.skasti.skynvaettr.topology.Node
+import no.skasti.skynvaettr.topology.Port
 
 class SingleSlotReceiverTest {
     @Test

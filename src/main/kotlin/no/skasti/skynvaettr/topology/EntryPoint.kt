@@ -1,7 +1,6 @@
-package no.skasti.skynvaettr.runtime
+package no.skasti.skynvaettr.topology
 
 import kotlin.reflect.KClass
-import no.skasti.skynvaettr.representation.Representation
 
 /**
  * Converts newly available values of one type into one or more representations.

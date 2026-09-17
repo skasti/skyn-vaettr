@@ -1,4 +1,6 @@
-package no.skasti.skynvaettr.runtime
+package no.skasti.skynvaettr.topology
+
+import no.skasti.skynvaettr.runtime.ReceiveEvent
 
 /**
  * A named endpoint owned by a processing node.

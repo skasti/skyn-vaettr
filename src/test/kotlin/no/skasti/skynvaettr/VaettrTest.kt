@@ -5,8 +5,8 @@ import kotlin.test.assertEquals
 import no.skasti.skynvaettr.environment.InMemoryEnvironment
 import no.skasti.skynvaettr.representation.Embedding
 import no.skasti.skynvaettr.representation.Representation
-import no.skasti.skynvaettr.runtime.EntryPoint
-import no.skasti.skynvaettr.runtime.Port
+import no.skasti.skynvaettr.topology.EntryPoint
+import no.skasti.skynvaettr.topology.Port
 import no.skasti.skynvaettr.runtime.SingleSlotPort
 import org.junit.jupiter.api.assertDoesNotThrow
 

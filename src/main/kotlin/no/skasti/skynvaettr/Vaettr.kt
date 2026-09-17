@@ -2,7 +2,7 @@ package no.skasti.skynvaettr
 
 import no.skasti.skynvaettr.environment.Environment
 import kotlin.reflect.KClass
-import no.skasti.skynvaettr.runtime.EntryPoint
+import no.skasti.skynvaettr.topology.EntryPoint
 import no.skasti.skynvaettr.runtime.SampleEntryPoint
 
 /**

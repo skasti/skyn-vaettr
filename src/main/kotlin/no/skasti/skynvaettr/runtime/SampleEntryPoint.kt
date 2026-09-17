@@ -13,6 +13,8 @@ import no.skasti.skynvaettr.signals.MutableSampleStore
 import no.skasti.skynvaettr.signals.Sample
 import no.skasti.skynvaettr.signals.SampleStore
 import no.skasti.skynvaettr.signals.SignalId
+import no.skasti.skynvaettr.topology.EntryPoint
+import no.skasti.skynvaettr.topology.Port
 
 /**
  * Initial sample entrypoint based on the strongest generic sensory pattern explored in playpen.

@@ -1,4 +1,4 @@
-package no.skasti.skynvaettr.runtime
+package no.skasti.skynvaettr.topology
 
 /**
  * A directed topology connection from one [source] port to one [target] port.

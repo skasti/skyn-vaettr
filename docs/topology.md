@@ -14,8 +14,8 @@ The current runtime has two separate concerns:
 `Vaettr.update()` polls the environment and invokes its configured entrypoints. The topology
 after entrypoints is not yet connected to `Vaettr`.
 
-The existing `ProcessingGraph` and `SensingProcessingGraph` remain available as independent
-experimental code. They are not the intended long-term topology API.
+`SampleEntryPoint` stores incoming samples, builds representations from their temporal history,
+and emits them through its output port.
 
 ## Goals
 

@@ -1,11 +1,14 @@
 package no.skasti.skynvaettr.runtime
 
+import no.skasti.skynvaettr.topology.Port
+import no.skasti.skynvaettr.topology.Synapse
+
 /** A subscription to a [ReceiveEvent]. */
 fun interface Subscription {
     fun unsubscribe()
 }
 
-/** Event published after a [Port] has received and retained a representation. */
+/** Event published after a [no.skasti.skynvaettr.topology.Port] has received and retained a representation. */
 class ReceiveEvent {
     private val listeners = mutableSetOf<(Port<*>) -> Unit>()
 

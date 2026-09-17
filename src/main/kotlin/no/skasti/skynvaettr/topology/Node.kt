@@ -1,4 +1,4 @@
-package no.skasti.skynvaettr.runtime
+package no.skasti.skynvaettr.topology
 
 /**
  * A processing component that owns ports and subscribes to their receive events.
