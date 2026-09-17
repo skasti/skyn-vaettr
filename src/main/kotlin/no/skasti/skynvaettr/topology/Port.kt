@@ -8,7 +8,7 @@ import no.skasti.skynvaettr.runtime.ReceiveEvent
  * A port can emit representations through its outgoing synapses, receive representations from an
  * incoming synapse, and notify subscribers after its input state changes.
  */
-interface Port<T> {
+interface Port<T: Any> {
     val name: String
     /** Outgoing connections from this port, exposed for topology inspection. */
     val synapses: List<Synapse<T>>
