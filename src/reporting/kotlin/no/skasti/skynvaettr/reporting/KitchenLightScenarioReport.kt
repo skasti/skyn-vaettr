@@ -5,6 +5,11 @@ import java.nio.file.Path
 import java.time.Duration
 import java.time.Instant
 import no.skasti.skynvaettr.Vaettr
+import no.skasti.skynvaettr.attention.AttentionNode
+import no.skasti.skynvaettr.attention.KeyNode
+import no.skasti.skynvaettr.attention.QueryNode
+import no.skasti.skynvaettr.attention.ScaledDotProductAttention
+import no.skasti.skynvaettr.attention.ValueNode
 import no.skasti.skynvaettr.runtime.DefaultTopology
 import no.skasti.skynvaettr.examples.KitchenLightScenario
 import no.skasti.skynvaettr.signals.SampleEntryPoint
@@ -18,7 +23,20 @@ object KitchenLightScenarioReport {
 
         val world = KitchenLightScenario()
         val sampleEntryPoint = SampleEntryPoint()
-        val topology = DefaultTopology(world, listOf(sampleEntryPoint))
+        val queryNode = QueryNode()
+        val keyNode = KeyNode()
+        val valueNode = ValueNode()
+        val attentionNode = AttentionNode(ScaledDotProductAttention())
+        sampleEntryPoint.output.connectTo(queryNode.input)
+        sampleEntryPoint.output.connectTo(keyNode.input)
+        sampleEntryPoint.output.connectTo(valueNode.input)
+        queryNode.output.connectTo(attentionNode.q)
+        keyNode.output.connectTo(attentionNode.k)
+        valueNode.output.connectTo(attentionNode.v)
+        val topology = DefaultTopology(
+            world,
+            listOf(sampleEntryPoint, queryNode, keyNode, valueNode, attentionNode),
+        )
         val vaettr = Vaettr(world, topology)
         val duration = Duration.ofDays(10)
         world.simulate(

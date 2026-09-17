@@ -70,16 +70,22 @@ class AttentionNodeTest {
     fun `sample entrypoint can drive self attention through synapses`() {
         val environment = InMemoryEnvironment()
         val entryPoint = SampleEntryPoint()
+        val query = QueryNode()
+        val key = KeyNode()
+        val value = ValueNode()
         val node = AttentionNode(ScaledDotProductAttention())
-        entryPoint.output.connectTo(node.q)
-        entryPoint.output.connectTo(node.k)
-        entryPoint.output.connectTo(node.v)
+        entryPoint.output.connectTo(query.input)
+        entryPoint.output.connectTo(key.input)
+        entryPoint.output.connectTo(value.input)
+        query.output.connectTo(node.q)
+        key.output.connectTo(node.k)
+        value.output.connectTo(node.v)
         val sink = SingleSlotPort<Representation>("sink")
         node.attention.connectTo(sink)
         val sinkNode = object : Node {
             override val ports = listOf(sink)
         }
-        val topology = DefaultTopology(environment, listOf(entryPoint, node, sinkNode))
+        val topology = DefaultTopology(environment, listOf(entryPoint, query, key, value, node, sinkNode))
         environment.append(Sample(Signal<Double>("temperature"), 20.0, Instant.EPOCH))
 
         topology.update()

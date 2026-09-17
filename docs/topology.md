@@ -121,6 +121,12 @@ calls `Attention.apply`, clears the inputs after successful computation, and emi
 Computation failures retain the inputs. Failures in downstream delivery occur after inputs have
 been cleared. Q/K/V projections can be supplied by separate upstream nodes.
 
+The initial projection nodes are `QueryNode`, `KeyNode`, and `ValueNode` in the `attention` package.
+They each have an input and output port and can be connected directly to the `SampleEntryPoint`
+output. Their default projection is identity, while `LinearRepresentationProjection` can be supplied
+with separate weights and bias for each role. The projection is applied independently to every
+position in the incoming representation.
+
 ```mermaid
 flowchart LR
     Q[Queries] --> QR[Queries port] 
