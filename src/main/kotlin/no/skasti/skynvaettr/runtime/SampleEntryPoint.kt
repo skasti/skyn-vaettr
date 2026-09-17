@@ -32,6 +32,9 @@ class SampleEntryPoint(
     private val historyAges: List<Duration> = DEFAULT_HISTORY_AGES,
 ) : EntryPoint<Sample<*>> {
     override val inputType: KClass<Sample<*>> = Sample::class
+    override val ports: List<Port<*>>
+        get() = listOf(output)
+    val output: Port<Representation> = SingleSlotPort("samples")
 
     var latestRepresentation: Representation? = null
         private set
@@ -43,7 +46,7 @@ class SampleEntryPoint(
         require(maxHistoryAge > Duration.ZERO) { "history ages must include at least one positive duration" }
     }
 
-    override fun process(items: List<Sample<*>>): Representation {
+    override fun process(items: List<Sample<*>>) {
         require(items.isNotEmpty()) { "sample entrypoint requires at least one sample" }
         sampleStore.append(items)
 
@@ -52,9 +55,11 @@ class SampleEntryPoint(
         val observations = selectObservations(now, history)
         require(observations.isNotEmpty()) { "sample entrypoint produced no observations" }
 
-        return Representation.from(observations.map(::encode)).also {
+        val representation = Representation.from(observations.map(::encode)).also {
             latestRepresentation = it
         }
+
+        output.emit(representation)
     }
 
     private fun selectObservations(

@@ -7,5 +7,5 @@ package no.skasti.skynvaettr.runtime
  * other ports have values, accumulated, or handled according to another domain-specific policy.
  */
 interface Node {
-    fun onInputReceived(receiver: RepresentationReceiver)
+    val ports: List<Port<*>>
 }

@@ -141,8 +141,8 @@ rules.
 
 ## Entry points
 
-An `EntryPoint<T>` is a topology source with a typed external input. Its `process` function should
-eventually emit through one or more ports instead of returning one representation:
+An `EntryPoint<T>` is a topology source with a typed external input. Its `process` function emits
+through one or more ports instead of returning one representation:
 
 ```kotlin
 interface EntryPoint : Node {
@@ -158,7 +158,17 @@ For example, a sample entrypoint may expose separate ports for:
 - quality or confidence metadata.
 
 The entrypoint decides how the external values are transformed and which outputs it emits. The
-topology decides where those outputs go next.
+topology decides where those outputs go next. `Vaettr.update()` only orchestrates environment polling
+and entrypoint processing; emitted representations continue through connected synapses.
+
+`Vaettr` holds an `Environment` and a private list of typed `EntryPoint<T>` instances. On each
+`update()`, it asks the environment for values newly available for each entrypoint and passes
+non-empty batches to `EntryPoint.process(...)`. Entrypoints emit representations through their
+output ports; `Vaettr.update()` does not collect or return those representations.
+
+`EntryPoint<T>` is the first explicit processing boundary. Its input type defines what it consumes,
+while its `process(items: List<T>)` function defines how those items become representations emitted
+into the processing topology. The topology decides where those outputs go next.
 
 ## Topology ownership
 

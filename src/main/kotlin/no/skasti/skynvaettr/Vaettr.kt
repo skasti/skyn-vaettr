@@ -17,11 +17,12 @@ class Vaettr(
 ) {
     private val entryPoints: List<EntryPoint<*>> = entryPoints.toList()
 
-    fun update(): List<Representation> =
-        entryPoints.mapNotNull { entryPoint -> processNew(entryPoint) }
+    fun update() = entryPoints.forEach { entryPoint -> processNew(entryPoint) }
 
-    private fun <T : Any> processNew(entryPoint: EntryPoint<T>): Representation? {
+    private fun <T : Any> processNew(entryPoint: EntryPoint<T>) {
         val items = environment.getNew(entryPoint.inputType)
-        return if (items.isEmpty()) null else entryPoint.process(items)
+        if (items.isNotEmpty()) {
+            entryPoint.process(items)
+        }
     }
 }

@@ -9,20 +9,20 @@ import no.skasti.skynvaettr.representation.Representation
 class SingleSlotPortTest {
     @Test
     fun `stores representation and publishes receive event`() {
-        val port = SingleSlotPort("input")
-        val received = mutableListOf<Port>()
+        val port = SingleSlotPort<Representation>("input")
+        val received = mutableListOf<Port<*>>()
         port.onReceive.subscribe(received::add)
         val representation = representation(1.0)
 
         port.receive(representation)
 
         assertEquals(representation, port.pending)
-        assertEquals<List<Port>>(listOf(port), received)
+        assertEquals<List<Port<*>>>(listOf(port), received)
     }
 
     @Test
     fun `rejects a second representation until the first is cleared`() {
-        val port = SingleSlotPort("input")
+        val port = SingleSlotPort<Representation>("input")
         val first = representation(1.0)
         val second = representation(2.0)
 
@@ -36,23 +36,25 @@ class SingleSlotPortTest {
 
     @Test
     fun `clearing allows the next representation to be received`() {
-        val port = SingleSlotPort("input")
-        val received = mutableListOf<Port>()
-        port.onReceive.subscribe(received::add)
+        val port = SingleSlotPort<Representation>("input")
+        val received = mutableListOf<Port<*>>()
+        port.onReceive += received::add
 
-        port.receive(representation(1.0))
+        val first = representation(1.0)
+        port.receive(first)
         port.clear()
-        port.receive(representation(2.0))
+        val second = representation(2.0)
+        port.receive(second)
 
-        assertEquals<List<Port>>(listOf(port, port), received)
-        assertEquals(representation(2.0), port.pending)
+        assertEquals(listOf<Port<*>>(port, port), received)
+        assertEquals(second, port.pending)
     }
 
     @Test
     fun `emit delivers to every connected target port`() {
-        val output = SingleSlotPort("output")
-        val firstInput = SingleSlotPort("first-input")
-        val secondInput = SingleSlotPort("second-input")
+        val output = SingleSlotPort<Representation>("output")
+        val firstInput = SingleSlotPort<Representation>("first-input")
+        val secondInput = SingleSlotPort<Representation>("second-input")
         val representation = representation(1.0)
 
         val firstSynapse = output.connectTo(firstInput)
@@ -69,8 +71,8 @@ class SingleSlotPortTest {
 
     @Test
     fun `unsubscribe stops receive event delivery`() {
-        val port = SingleSlotPort("input")
-        val received = mutableListOf<Port>()
+        val port = SingleSlotPort<Representation>("input")
+        val received = mutableListOf<Port<*>>()
         val subscription = port.onReceive.subscribe(received::add)
 
         subscription.unsubscribe()

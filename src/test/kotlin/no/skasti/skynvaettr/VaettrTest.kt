@@ -6,6 +6,9 @@ import no.skasti.skynvaettr.environment.InMemoryEnvironment
 import no.skasti.skynvaettr.representation.Embedding
 import no.skasti.skynvaettr.representation.Representation
 import no.skasti.skynvaettr.runtime.EntryPoint
+import no.skasti.skynvaettr.runtime.Port
+import no.skasti.skynvaettr.runtime.SingleSlotPort
+import org.junit.jupiter.api.assertDoesNotThrow
 
 class VaettrTest {
     @Test
@@ -16,13 +19,12 @@ class VaettrTest {
 
         environment.append(listOf(1, "ignored", 2))
 
-        assertEquals(1, vaettr.update().size)
+        assertDoesNotThrow { vaettr.update() }
         assertEquals(listOf(listOf(1, 2)), entryPoint.received)
-        assertEquals(emptyList(), vaettr.update())
 
         environment.append(3)
 
-        assertEquals(1, vaettr.update().size)
+        assertDoesNotThrow { vaettr.update() }
         assertEquals(listOf(listOf(1, 2), listOf(3)), entryPoint.received)
     }
 
@@ -35,7 +37,7 @@ class VaettrTest {
 
         environment.append(listOf(1, "one", 2, "two"))
 
-        assertEquals(2, vaettr.update().size)
+        assertDoesNotThrow { vaettr.update() }
         assertEquals(listOf(listOf(1, 2)), integers.received)
         assertEquals(listOf(listOf("one", "two")), strings.received)
     }
@@ -43,20 +45,26 @@ class VaettrTest {
     private class RecordingEntryPoint : EntryPoint<Int> {
         override val inputType = Int::class
         val received = mutableListOf<List<Int>>()
+        val output = SingleSlotPort<Representation>("output")
+        override val ports: List<Port<*>>
+            get() = listOf(output)
 
-        override fun process(items: List<Int>): Representation {
+        override fun process(items: List<Int>) {
             received += items
-            return Representation.of(Embedding.of(items.first().toDouble()))
+            output.emit(Representation.of(Embedding.of(items.first().toDouble())))
         }
     }
 
     private class StringEntryPoint : EntryPoint<String> {
         override val inputType = String::class
         val received = mutableListOf<List<String>>()
+        val output = SingleSlotPort<Representation>("output")
+        override val ports: List<Port<*>>
+            get() = listOf(output)
 
-        override fun process(items: List<String>): Representation {
+        override fun process(items: List<String>) {
             received += items
-            return Representation.of(Embedding.of(items.first().length.toDouble()))
+            output.emit(Representation.of(Embedding.of(items.first().length.toDouble())))
         }
     }
 }

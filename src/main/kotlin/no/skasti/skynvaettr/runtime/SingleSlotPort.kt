@@ -1,27 +1,5 @@
 package no.skasti.skynvaettr.runtime
 
-import no.skasti.skynvaettr.representation.Representation
-
-/**
- * A named endpoint owned by a processing node.
- *
- * A port can emit representations through its outgoing synapses, receive representations from an
- * incoming synapse, and notify subscribers after its input state changes.
- */
-interface Port {
-    val name: String
-    val pending: Representation?
-    val onReceive: ReceiveEvent
-
-    fun emit(value: Representation)
-
-    fun receive(value: Representation)
-
-    fun clear()
-
-    fun connectTo(target: Port): Synapse
-}
-
 /** A subscription to a [ReceiveEvent]. */
 fun interface Subscription {
     fun unsubscribe()
@@ -29,14 +7,18 @@ fun interface Subscription {
 
 /** Event published after a [Port] has received and retained a representation. */
 class ReceiveEvent {
-    private val listeners = mutableSetOf<(Port) -> Unit>()
+    private val listeners = mutableSetOf<(Port<*>) -> Unit>()
 
-    fun subscribe(listener: (Port) -> Unit): Subscription {
+    fun subscribe(listener: (Port<*>) -> Unit): Subscription {
         listeners += listener
         return Subscription { listeners -= listener }
     }
 
-    internal fun publish(port: Port) {
+    operator fun plusAssign(listener: (Port<*>) -> Unit) {
+        listeners += listener
+    }
+
+    internal fun publish(port: Port<*>) {
         listeners.toList().forEach { listener -> listener(port) }
     }
 }
@@ -47,21 +29,21 @@ class ReceiveEvent {
  * A second received representation fails until [clear] is called. This deliberately prevents
  * unprocessed input from being overwritten silently.
  */
-class SingleSlotPort(
+class SingleSlotPort<T>(
     override val name: String,
-) : Port {
-    private val outgoing = mutableListOf<Synapse>()
+) : Port<T> {
+    private val outgoing = mutableListOf<Synapse<T>>()
 
-    override var pending: Representation? = null
+    var pending: T? = null
         private set
 
     override val onReceive = ReceiveEvent()
 
-    override fun emit(value: Representation) {
+    override fun emit(value: T) {
         outgoing.toList().forEach { synapse -> synapse.deliver(value) }
     }
 
-    override fun receive(value: Representation) {
+    override fun receive(value: T) {
         check(pending == null) {
             "Port '$name' already contains an unprocessed representation"
         }
@@ -70,10 +52,10 @@ class SingleSlotPort(
         onReceive.publish(this)
     }
 
-    override fun clear() {
+    fun clear() {
         pending = null
     }
 
-    override fun connectTo(target: Port): Synapse =
+    override fun connectTo(target: Port<T>): Synapse<T> =
         Synapse(source = this, target = target).also(outgoing::add)
 }

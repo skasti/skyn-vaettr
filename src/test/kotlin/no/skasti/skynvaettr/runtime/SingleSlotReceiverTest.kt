@@ -10,70 +10,79 @@ class SingleSlotReceiverTest {
     @Test
     fun `stores representation and notifies owner`() {
         val node = RecordingNode()
-        val receiver = SingleSlotReceiver(node, "input")
+        val input = node.input
         val representation = representation(1.0)
 
-        receiver.receive(representation)
+        input.receive(representation)
 
-        assertEquals(representation, receiver.pending)
-        assertEquals(listOf<RepresentationReceiver>(receiver), node.received)
+        assertEquals(representation, input.pending)
+        assertEquals(listOf<Port<*>>(input), node.received)
     }
 
     @Test
     fun `rejects a second representation until the first is cleared`() {
-        val receiver = SingleSlotReceiver(RecordingNode(), "input")
+        val node = RecordingNode()
+        val input = node.input
         val first = representation(1.0)
         val second = representation(2.0)
 
-        receiver.receive(first)
+        input.receive(first)
 
         assertFailsWith<IllegalStateException> {
-            receiver.receive(second)
+            input.receive(second)
         }
-        assertEquals(first, receiver.pending)
+        assertEquals(first, input.pending)
     }
 
     @Test
     fun `clearing allows the next representation to be received`() {
         val node = RecordingNode()
-        val receiver = SingleSlotReceiver(node, "input")
+        val input = node.input
         val first = representation(1.0)
         val second = representation(2.0)
 
-        receiver.receive(first)
-        receiver.clear()
-        receiver.receive(second)
+        input.receive(first)
+        input.clear()
+        input.receive(second)
 
-        assertEquals(listOf<RepresentationReceiver>(receiver, receiver), node.received)
-        assertEquals(second, receiver.pending)
+        assertEquals(listOf<Port<*>>(input, input), node.received)
+        assertEquals(second, input.pending)
     }
 
     @Test
     fun `retains representation when owner notification fails`() {
-        val receiver = SingleSlotReceiver(FailingNode(), "input")
+        val node = FailingNode()
+        val input = node.input
         val representation = representation(1.0)
 
         assertFailsWith<IllegalStateException> {
-            receiver.receive(representation)
+            input.receive(representation)
         }
 
-        assertEquals(representation, receiver.pending)
+        assertEquals(representation, input.pending)
     }
 
     private fun representation(value: Double): Representation =
         Representation.of(Embedding.of(value))
 
     private class RecordingNode : Node {
-        val received = mutableListOf<RepresentationReceiver>()
+        val received = mutableListOf<Port<*>>()
+        val input = SingleSlotPort<Representation>("input")
+        override val ports: List<Port<*>>
+            get() = listOf(input)
 
-        override fun onInputReceived(receiver: RepresentationReceiver) {
-            received += receiver
+        init {
+            input.onReceive.subscribe { port -> received += port }
         }
     }
 
     private class FailingNode : Node {
-        override fun onInputReceived(receiver: RepresentationReceiver) {
-            error("processing failed")
+        val input = SingleSlotPort<Representation>("input")
+        override val ports: List<Port<*>>
+            get() = listOf(input)
+
+        init {
+            input.onReceive.subscribe { error("processing failed") }
         }
     }
 }
