@@ -1,7 +1,7 @@
 package no.skasti.skynvaettr
 
 import no.skasti.skynvaettr.environment.Environment
-import no.skasti.skynvaettr.representation.Representation
+import kotlin.reflect.KClass
 import no.skasti.skynvaettr.runtime.EntryPoint
 import no.skasti.skynvaettr.runtime.SampleEntryPoint
 
@@ -9,7 +9,7 @@ import no.skasti.skynvaettr.runtime.SampleEntryPoint
  * One running Skynvættr instance.
  *
  * [update] pulls newly available values from [environment] and processes them through the configured
- * entrypoints. Each entrypoint consumes only values of its declared input type.
+ * entrypoints. Each input type is fetched once per update and shared with all matching entrypoints.
  */
 class Vaettr(
     val environment: Environment,
@@ -17,12 +17,18 @@ class Vaettr(
 ) {
     private val entryPoints: List<EntryPoint<*>> = entryPoints.toList()
 
-    fun update() = entryPoints.forEach { entryPoint -> processNew(entryPoint) }
-
-    private fun <T : Any> processNew(entryPoint: EntryPoint<T>) {
-        val items = environment.getNew(entryPoint.inputType)
-        if (items.isNotEmpty()) {
-            entryPoint.process(items)
+    fun update() {
+        val batches = entryPoints.map { it.inputType }.distinct().associateWith { environment.getNew(it) }
+        entryPoints.forEach { entryPoint ->
+            if (batches[entryPoint.inputType]?.isNotEmpty() == true) {
+                entryPoint.process(batches.getItems(entryPoint.inputType))
+            }
         }
+    }
+
+    private fun <T: Any> Map<KClass<out Any>, List<Any>>.getItems(inputType: KClass<*>): List<T> {
+        val raw = this[inputType] ?: return emptyList()
+        @Suppress("UNCHECKED_CAST")
+        return raw as List<T>
     }
 }

@@ -42,6 +42,35 @@ class VaettrTest {
         assertEquals(listOf(listOf("one", "two")), strings.received)
     }
 
+    @Test
+    fun `entrypoints sharing an input type receive every new batch`() {
+        val environment = InMemoryEnvironment()
+        val first = RecordingEntryPoint()
+        val second = RecordingEntryPoint()
+        val strings = StringEntryPoint()
+        val vaettr = Vaettr(environment, listOf(first, strings, second))
+
+        environment.append(listOf(1, "one", 2))
+        vaettr.update()
+
+        assertEquals(listOf(listOf(1, 2)), first.received)
+        assertEquals(first.received, second.received)
+        assertEquals(listOf(listOf("one")), strings.received)
+
+        vaettr.update()
+
+        assertEquals(listOf(listOf(1, 2)), first.received)
+        assertEquals(first.received, second.received)
+        assertEquals(listOf(listOf("one")), strings.received)
+
+        environment.append(3)
+        vaettr.update()
+
+        assertEquals(listOf(listOf(1, 2), listOf(3)), first.received)
+        assertEquals(first.received, second.received)
+        assertEquals(listOf(listOf("one")), strings.received)
+    }
+
     private class RecordingEntryPoint : EntryPoint<Int> {
         override val inputType = Int::class
         val received = mutableListOf<List<Int>>()
