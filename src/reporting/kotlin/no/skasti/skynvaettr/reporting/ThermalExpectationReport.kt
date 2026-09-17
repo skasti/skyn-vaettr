@@ -16,6 +16,7 @@ import no.skasti.skynvaettr.expectations.Expectation
 import no.skasti.skynvaettr.expectations.ExpectationResult
 import no.skasti.skynvaettr.signals.SampleEntryPoint
 import no.skasti.skynvaettr.signals.Sample
+import no.skasti.skynvaettr.signals.InMemorySampleStore
 
 /** Renders the inspectable report for the minimal thermal expectation example. */
 object ThermalExpectationReport {
@@ -25,7 +26,8 @@ object ThermalExpectationReport {
         Files.createDirectories(reportDir)
 
         val world = ThermalExpectationScenario()
-        val sampleEntryPoint = SampleEntryPoint()
+        val sampleStore = InMemorySampleStore()
+        val sampleEntryPoint = SampleEntryPoint(sampleStore)
         val queryNode = QueryNode()
         val keyNode = KeyNode()
         val valueNode = ValueNode()
@@ -38,6 +40,7 @@ object ThermalExpectationReport {
         valueNode.output.connectTo(attentionNode.v)
         val topology = DefaultTopology(
             world,
+            sampleStore,
             listOf(sampleEntryPoint, queryNode, keyNode, valueNode, attentionNode),
         )
         val vaettr = Vaettr(world, topology)
@@ -51,7 +54,7 @@ object ThermalExpectationReport {
             step = Duration.ofMinutes(5),
         )
 
-        val samples = sampleEntryPoint.sampleStore.get(reportStart, reportEnd.plusNanos(1))
+        val samples = topology.sampleStore.get(reportStart, reportEnd.plusNanos(1))
         val renderer = SampleChartRenderer()
         val worldSeries = listOf(
             SampleChartRenderer.Series(world.outdoorTemperature.id, "Outdoor temperature"),

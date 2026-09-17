@@ -24,12 +24,16 @@ import no.skasti.skynvaettr.topology.Port
  * The entrypoint deliberately stops before learned projection and attention. The successful
  * playpen attention experiments normalized values and learned the input/key/value projections and
  * latent query from a prediction objective.
+ *
+ * The owning topology ingests samples before [process] is called; processing only reads history
+ * and emits a representation.
  */
 class SampleEntryPoint(
-    val sampleStore: MutableSampleStore = InMemorySampleStore(),
+    private val sampleStore: MutableSampleStore,
     private val signalEmbedder: Embedder<SignalId> = SignalIdentityEmbedder(),
     private val historyAges: List<Duration> = DEFAULT_HISTORY_AGES,
 ) : EntryPoint<Sample<*>> {
+
     override val inputType: KClass<Sample<*>> = Sample::class
     override val ports: List<Port<*>>
         get() = listOf(output)
@@ -47,7 +51,6 @@ class SampleEntryPoint(
 
     override fun process(items: List<Sample<*>>) {
         require(items.isNotEmpty()) { "sample entrypoint requires at least one sample" }
-        sampleStore.append(items)
 
         val now = items.maxOf { it.timestamp }
         val history = sampleStore.get(now.minus(maxHistoryAge), now.plusNanos(1))

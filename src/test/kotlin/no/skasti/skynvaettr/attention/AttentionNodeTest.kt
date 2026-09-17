@@ -13,6 +13,7 @@ import no.skasti.skynvaettr.environment.InMemoryEnvironment
 import no.skasti.skynvaettr.representation.Embedding
 import no.skasti.skynvaettr.representation.Representation
 import no.skasti.skynvaettr.signals.Sample
+import no.skasti.skynvaettr.signals.InMemorySampleStore
 import no.skasti.skynvaettr.signals.Signal
 import no.skasti.skynvaettr.topology.Node
 import java.time.Instant
@@ -69,7 +70,8 @@ class AttentionNodeTest {
     @Test
     fun `sample entrypoint can drive self attention through synapses`() {
         val environment = InMemoryEnvironment()
-        val entryPoint = SampleEntryPoint()
+        val sampleStore = InMemorySampleStore()
+        val entryPoint = SampleEntryPoint(sampleStore)
         val query = QueryNode()
         val key = KeyNode()
         val value = ValueNode()
@@ -85,7 +87,11 @@ class AttentionNodeTest {
         val sinkNode = object : Node {
             override val ports = listOf(sink)
         }
-        val topology = DefaultTopology(environment, listOf(entryPoint, query, key, value, node, sinkNode))
+        val topology = DefaultTopology(
+            environment,
+            sampleStore,
+            listOf(entryPoint, query, key, value, node, sinkNode),
+        )
         environment.append(Sample(Signal<Double>("temperature"), 20.0, Instant.EPOCH))
 
         topology.update()

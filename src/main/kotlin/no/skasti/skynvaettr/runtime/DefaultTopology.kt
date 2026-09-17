@@ -1,5 +1,8 @@
 package no.skasti.skynvaettr.runtime
 
+import no.skasti.skynvaettr.signals.InMemorySampleStore
+import no.skasti.skynvaettr.signals.MutableSampleStore
+import no.skasti.skynvaettr.signals.Sample
 import no.skasti.skynvaettr.signals.SampleEntryPoint
 
 import java.util.Collections
@@ -19,7 +22,8 @@ import no.skasti.skynvaettr.topology.Group
  */
 class DefaultTopology(
     private val environment: Environment,
-    nodes: List<Node> = listOf(SampleEntryPoint()),
+    val sampleStore: MutableSampleStore = InMemorySampleStore(),
+    nodes: List<Node> = listOf(SampleEntryPoint(sampleStore)),
     groups: List<Group> = emptyList(),
 ) : Topology {
     override val nodes: List<Node> = nodes.toList()
@@ -51,17 +55,24 @@ class DefaultTopology(
 
     constructor(
         environment: Environment,
+        sampleStore: MutableSampleStore = InMemorySampleStore(),
         configure: TopologyBuilder.() -> Unit,
-    ) : this(environment, TopologyBuilder().apply(configure).build())
+    ) : this(environment, sampleStore, TopologyBuilder().apply(configure).build())
 
     private constructor(
         environment: Environment,
+        sampleStore: MutableSampleStore = InMemorySampleStore(),
         definition: TopologyBuilder.Definition,
-    ) : this(environment, definition.nodes, definition.groups)
+    ) : this(environment, sampleStore, definition.nodes, definition.groups)
 
     override fun update() {
         val entryPoints = entryPoints
         val batches = entryPoints.map { it.inputType }.distinct().associateWith { environment.getNew(it) }
+        batches[Sample::class]?.let { rawBatch ->
+            @Suppress("UNCHECKED_CAST")
+            val samples = rawBatch as List<Sample<*>>
+            if (samples.isNotEmpty()) sampleStore.append(samples)
+        }
         entryPoints.forEach { entryPoint ->
             if (batches[entryPoint.inputType]?.isNotEmpty() == true) {
                 entryPoint.process(batches.getItems(entryPoint.inputType))

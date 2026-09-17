@@ -56,10 +56,15 @@ On each update, `DefaultTopology`:
 
 1. collects the distinct input types declared by its entrypoints;
 2. calls `Environment.getNew(type)` once for each distinct type;
-3. passes each non-empty batch to every entrypoint declaring that type.
+3. appends each non-empty `Sample` batch once to its canonical `MutableSampleStore`;
+4. passes each non-empty batch to every entrypoint declaring that type.
 
 This means two entrypoints with the same input type receive the same batch. Empty batches do not call
-`EntryPoint.process`. Processing and port delivery are synchronous in this implementation.
+`EntryPoint.process`. `DefaultTopology` owns the canonical `sampleStore`. Its default
+`SampleEntryPoint` is constructed with that store; custom sample entrypoints must receive the same
+store when they are constructed. This keeps ingestion separate from representation processing and
+prevents a shared history from receiving duplicate batches.
+Processing and port delivery are synchronous in this implementation.
 
 ## Current example network
 
@@ -78,9 +83,10 @@ flowchart LR
     AV --> A
 ```
 
-`SampleEntryPoint` stores incoming samples in its `MutableSampleStore`, selects the configured
-history ages for each signal, and emits one `Representation` containing signal identity, scalar
-value, and normalized relative time for each selected observation.
+`DefaultTopology` stores incoming samples in its canonical `MutableSampleStore` before dispatching to
+entrypoints. `SampleEntryPoint` reads that history, selects the configured history ages for each
+signal, and emits one `Representation` containing signal identity, scalar value, and normalized
+relative time for each selected observation.
 
 `QueryNode`, `KeyNode`, and `ValueNode` each have an input and output port. Their default
 `IdentityRepresentationProjection` keeps the sample representation unchanged. A separate

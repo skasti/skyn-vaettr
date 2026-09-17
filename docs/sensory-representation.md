@@ -8,18 +8,18 @@ The concrete reference network is described in [Default topology](default-topolo
 flowchart TD
     ENV[Environment] -->|New values| Vaettr 
     Vaettr --> Topology[Topology]
-    Topology --> EntryPoints[EntryPoints]
+    Topology --> Store[MutableSampleStore]
+    Store --> EntryPoints[EntryPoints]
     EntryPoints --> Nodes[Processing nodes]
     Nodes --> Representation[Representation]
-    EntryPoints --> Store[MutableSampleStore] 
     Store --> Consumers[Replay / episodes]
 ```
 
 `Vaettr` holds an `Environment` and a `Topology`, defaulting to `DefaultTopology`. On each `update()`,
 it delegates to `Topology.update()`. `DefaultTopology` discovers typed `EntryPoint<T>` nodes, asks the
-environment for new values once per input type, and passes non-empty batches to matching entrypoints.
-Entrypoints emit representations through their ports; they do not return a representation from
-`process(...)`.
+environment for new values once per input type, stores each sample batch once in its canonical
+`MutableSampleStore`, and passes non-empty batches to matching entrypoints. Entrypoints emit
+representations through their ports; they do not return a representation from `process(...)`.
 
 `EntryPoint<T>` is the first explicit processing boundary. Its input type defines what it consumes,
 while its `process(items: List<T>)` function defines which representations it emits through its ports.
@@ -49,8 +49,8 @@ flowchart LR
     Outside --> Environment[Environment]
     Inside --> Environment
     Environment --> Vaettr[Vaettr.update]
-    Vaettr --> EntryPoint[SampleEntryPoint]
-    EntryPoint --> Store[SampleStore history]
+    Vaettr --> Store[SampleStore history]
+    Store --> EntryPoint[SampleEntryPoint]
     Store --> Model[Learned model]
     Model --> Expectation["Running expectation of future\nindoor temperature"]
 ```
@@ -77,7 +77,8 @@ remain open.
 
 `SampleEntryPoint` carries forward the generic sensory-input structure that performed best in the temporal relation-discovery experiments without promoting experiment-specific predictors or targets into core.
 
-It stores processed samples in its canonical `SampleStore` and offers every signal the same generic log-spaced history ages used in those experiments:
+It reads the canonical `SampleStore` populated by `DefaultTopology` and offers every signal the same
+generic log-spaced history ages used in those experiments:
 
 ```text
 5120, 2560, 1280, 640, 320, 160, 80, 60, 40, 30, 20, 15, 10, 5, 0 seconds
@@ -144,7 +145,8 @@ This revision establishes:
 - `SampleEntryPoint` as the initial default sensory front-end;
 - Q/K/V projection nodes and `AttentionNode` as the initial attention pipeline;
 - synchronous ports, synapses, and Graphviz topology rendering;
-- `MutableSampleStore` as the canonical observation history owned by the sample entrypoint;
+- the `DefaultTopology`-owned `MutableSampleStore` as the canonical observation history populated
+  before entrypoint processing;
 - `Representation`/`Embedding` as generic latent numeric data;
 - replaceable embedding and attention contracts with current baseline implementations.
 

@@ -1,8 +1,10 @@
 package no.skasti.skynvaettr.runtime
 
+import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertSame
 import no.skasti.skynvaettr.environment.InMemoryEnvironment
 import no.skasti.skynvaettr.representation.Embedding
 import no.skasti.skynvaettr.representation.Representation
@@ -10,6 +12,10 @@ import no.skasti.skynvaettr.topology.EntryPoint
 import no.skasti.skynvaettr.topology.Node
 import no.skasti.skynvaettr.topology.Port
 import no.skasti.skynvaettr.topology.Group
+import no.skasti.skynvaettr.signals.InMemorySampleStore
+import no.skasti.skynvaettr.signals.Sample
+import no.skasti.skynvaettr.signals.SampleEntryPoint
+import no.skasti.skynvaettr.signals.Signal
 import org.junit.jupiter.api.assertDoesNotThrow
 
 class DefaultTopologyTest {
@@ -46,6 +52,37 @@ class DefaultTopologyTest {
     }
 
     @Test
+    fun `ingests a shared sample batch once before dispatching entrypoints`() {
+        val environment = InMemoryEnvironment()
+        val topologyStore = InMemorySampleStore()
+        val first = SampleEntryPoint(topologyStore)
+        val second = SampleEntryPoint(topologyStore)
+        val topology = DefaultTopology(environment, topologyStore, listOf(first, second))
+        val sample = Sample(Signal<Double>("sensor.temperature"), 20.0, Instant.EPOCH)
+
+        environment.append(sample)
+        topology.update()
+
+        assertSame(topologyStore, topology.sampleStore)
+        assertEquals(listOf(sample), topologyStore.get(Instant.MIN, Instant.MAX))
+        assertNotNull(first.latestRepresentation)
+        assertNotNull(second.latestRepresentation)
+    }
+
+    @Test
+    fun `default sample entrypoint uses the topology sample store`() {
+        val environment = InMemoryEnvironment()
+        val topologyStore = InMemorySampleStore()
+        val topology = DefaultTopology(environment, topologyStore)
+        val sample = Sample(Signal<Double>("sensor.temperature"), 20.0, Instant.EPOCH)
+
+        environment.append(sample)
+        topology.update()
+
+        assertEquals(listOf(sample), topologyStore.get(Instant.MIN, Instant.MAX))
+    }
+
+    @Test
     fun `topology retains all nodes and derives entrypoints from them`() {
         val environment = InMemoryEnvironment()
         val entryPoint = RecordingEntryPoint()
@@ -55,7 +92,7 @@ class DefaultTopologyTest {
         }
         entryPoint.output.connectTo(input)
         val nodes = mutableListOf<Node>(entryPoint, node)
-        val topology = DefaultTopology(environment, nodes)
+        val topology = DefaultTopology(environment, nodes = nodes)
         nodes.clear()
 
         assertEquals(listOf(entryPoint, node), topology.nodes)
@@ -72,7 +109,7 @@ class DefaultTopologyTest {
     fun `update processes only new values for each typed entrypoint`() {
         val environment = InMemoryEnvironment()
         val entryPoint = RecordingEntryPoint()
-        val topology = DefaultTopology(environment, listOf(entryPoint))
+        val topology = DefaultTopology(environment, nodes = listOf(entryPoint))
 
         environment.append(listOf(1, "ignored", 2))
 
@@ -90,7 +127,7 @@ class DefaultTopologyTest {
         val environment = InMemoryEnvironment()
         val integers = RecordingEntryPoint()
         val strings = StringEntryPoint()
-        val topology = DefaultTopology(environment, listOf(integers, strings))
+        val topology = DefaultTopology(environment, nodes = listOf(integers, strings))
 
         environment.append(listOf(1, "one", 2, "two"))
 
@@ -105,7 +142,7 @@ class DefaultTopologyTest {
         val first = RecordingEntryPoint()
         val second = RecordingEntryPoint()
         val strings = StringEntryPoint()
-        val topology = DefaultTopology(environment, listOf(first, strings, second))
+        val topology = DefaultTopology(environment, nodes = listOf(first, strings, second))
 
         environment.append(listOf(1, "one", 2))
         topology.update()

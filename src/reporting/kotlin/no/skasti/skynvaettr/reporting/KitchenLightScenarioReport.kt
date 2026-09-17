@@ -13,6 +13,7 @@ import no.skasti.skynvaettr.attention.ValueNode
 import no.skasti.skynvaettr.runtime.DefaultTopology
 import no.skasti.skynvaettr.examples.KitchenLightScenario
 import no.skasti.skynvaettr.signals.SampleEntryPoint
+import no.skasti.skynvaettr.signals.InMemorySampleStore
 
 /** Renders the kitchen world itself, without involving models, predictions or expectations. */
 object KitchenLightScenarioReport {
@@ -22,7 +23,8 @@ object KitchenLightScenarioReport {
         Files.createDirectories(reportDir)
 
         val world = KitchenLightScenario()
-        val sampleEntryPoint = SampleEntryPoint()
+        val sampleStore = InMemorySampleStore()
+        val sampleEntryPoint = SampleEntryPoint(sampleStore)
         val queryNode = QueryNode()
         val keyNode = KeyNode()
         val valueNode = ValueNode()
@@ -35,6 +37,7 @@ object KitchenLightScenarioReport {
         valueNode.output.connectTo(attentionNode.v)
         val topology = DefaultTopology(
             world,
+            sampleStore,
             listOf(sampleEntryPoint, queryNode, keyNode, valueNode, attentionNode),
         )
         val vaettr = Vaettr(world, topology)
@@ -44,7 +47,7 @@ object KitchenLightScenarioReport {
             duration = duration,
             step = Duration.ofMinutes(5),
         )
-        val samples = sampleEntryPoint.sampleStore.get(Instant.EPOCH, Instant.EPOCH.plusNanos(duration.toNanos() + 1))
+        val samples = topology.sampleStore.get(Instant.EPOCH, Instant.EPOCH.plusNanos(duration.toNanos() + 1))
 
         val finalDayStart = Instant.EPOCH.plus(Duration.ofDays(9))
         val finalDayEnd = Instant.EPOCH.plus(duration)
