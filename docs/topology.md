@@ -1,21 +1,13 @@
 # Processing topology
 
-This document captures the planned processing topology for Skynvættr. It is intentionally
-provisional: the goal is to make the boundaries and unresolved semantics explicit before the
-implementation is expanded.
+This document defines the topology contracts and the design questions around them. The current
+concrete composition is documented separately in [Default topology](default-topology.md).
 
-## Current boundary
+## Boundary
 
-The current runtime has two separate concerns:
-
-- `Environment` provides newly available values to `DefaultTopology`;
-- `EntryPoint<T>` processes values of one external type into representations.
-
-`Vaettr.update()` delegates to `Topology.update()`. The initial `DefaultTopology` polls the
-environment once per input type and passes each non-empty batch to all matching entrypoints.
-
-`SampleEntryPoint` stores incoming samples, builds representations from their temporal history,
-and emits them through its output port.
+`Vaettr` delegates each update to a `Topology`. A topology exposes its nodes and derived entrypoints,
+advances its network through `update()`, and leaves the concrete polling and scheduling policy to its
+implementation.
 
 ## Goals
 
@@ -45,21 +37,14 @@ does not require immediate processing.
 
 A **Port** is a named endpoint owned by a node. A port has both sending and receiving capabilities:
 
-- `emit(representation)` delivers a representation through its outgoing synapses;
-- `receive(representation)` accepts a representation from an incoming synapse;
-- `onReceive` notifies subscribers after a representation has been accepted;
-- `pending` exposes retained input according to the port's buffering policy;
-- `clear()` explicitly removes retained input after successful processing.
+- `emit(value)` delivers a value through its outgoing synapses;
+- `receive(value)` accepts a value from an incoming synapse;
+- `onReceive` notifies subscribers after a value has been accepted;
+- `synapses` exposes the port's outgoing connections for topology inspection.
 
-The first implementation is `SingleSlotPort`:
-
-- it holds zero or one pending `Representation`;
-- receiving a value publishes `onReceive`;
-- receiving another value while occupied fails;
-- the value remains available until the node explicitly clears it.
-
-A single-slot port must not silently overwrite unprocessed input. Queueing, replacement, and other
-behaviours can be introduced later as separate port implementations or explicit policies.
+Buffering policy is deliberately outside the generic port contract. An implementation may retain one
+value, queue values, replace an existing value, or use another policy. Nodes should only depend on the
+buffering operations exposed by the concrete port policy they are designed to consume.
 
 ### Synapse
 
@@ -103,35 +88,25 @@ sequenceDiagram
     O->>S: deliver(representation)
     S->>I: receive(representation)
     I->>N: onReceive(port)
-    N->>I: Inspect pending value
+    N->>I: Inspect retained value
     N->>N: Decide whether inputs are ready
-    N->>I: Clear after successful processing
+    N->>I: Consume after successful processing
 ```
 
-Delivery and event publication are synchronous in the first implementation. Future scheduling must
-not require a node to assume that receipt and processing always use the same call stack.
+Whether delivery and event publication are synchronous is a topology scheduling choice. Nodes should
+not assume that receipt and processing always use the same call stack.
 
 ## Multi-input nodes
 
-An attention node is a useful example because it needs three distinct input ports:
-
-`AttentionNode` is implemented in `attention` and accepts an `Attention` implementation. Its ports
-are `q`, `k`, `v`, and the output `attention`. It consumes one representation from each input,
-calls `Attention.apply`, clears the inputs after successful computation, and emits `result.output`.
-Computation failures retain the inputs. Failures in downstream delivery occur after inputs have
-been cleared. Q/K/V projections can be supplied by separate upstream nodes.
-
-The initial projection nodes are `QueryNode`, `KeyNode`, and `ValueNode` in the `attention` package.
-They each have an input and output port and can be connected directly to the `SampleEntryPoint`
-output. Their default projection is identity, while `LinearRepresentationProjection` can be supplied
-with separate weights and bias for each role. The projection is applied independently to every
-position in the incoming representation.
+An attention node is a useful example because it needs three distinct input ports for queries, keys,
+and values, plus an output port. It may wait until all three inputs contain compatible values, invoke
+an attention operation, consume the inputs after successful computation, and emit the result.
 
 ```mermaid
 flowchart LR
-    Q[Queries] --> QR[Queries port] 
-    K[Keys] --> KR[Keys port] 
-    V[Values] --> VR[Values port]
+    Q[Query node] --> QR[Query port]
+    K[Key node] --> KR[Key port]
+    V[Value node] --> VR[Value port]
     QR --> ATT[Attention node]
     KR --> ATT
     VR --> ATT
@@ -139,12 +114,12 @@ flowchart LR
     ATT --> OUT[Output port]
 ```
 
-The attention node subscribes to the receive event of each input port. Once all three contain
-pending values, it can:
+An attention node may subscribe to the receive event of each input port. Once all three contain
+values, it can:
 
-1. read the pending query, key, and value representations;
+1. read the retained query, key, and value representations;
 2. perform attention;
-3. clear the three ports after successful processing;
+3. consume the three input values after successful processing;
 4. emit the result through its output port.
 
 This does not imply that every node must wait for all ports. A node may process when any input
@@ -157,7 +132,7 @@ An `EntryPoint<T>` is a topology source with a typed external input. Its `proces
 through one or more ports instead of returning one representation:
 
 ```kotlin
-interface EntryPoint : Node {
+interface EntryPoint<T : Any> : Node {
     val inputType: KClass<T>
     fun process(items: List<T>)
 }
@@ -170,36 +145,19 @@ For example, a sample entrypoint may expose separate ports for:
 - quality or confidence metadata.
 
 The entrypoint decides how the external values are transformed and which outputs it emits. The
-topology decides where those outputs go next. `DefaultTopology.update()` orchestrates environment polling
-and entrypoint processing; emitted representations continue through connected synapses.
+topology decides where those outputs go next. A topology implementation may poll an environment,
+receive values from another subsystem, or use another scheduling policy; emitted representations can
+continue through connected synapses.
 
-`Vaettr` holds an `Environment` and a `Topology`, defaulting to `DefaultTopology(environment)`.
-`DefaultTopology` owns a read-only list of nodes and derives its entrypoints from that list. On each `update()`, it fetches each input type once and passes
-non-empty batches to `EntryPoint.process(...)`. Entrypoints emit representations through their
-output ports; `Vaettr.update()` does not collect or return those representations.
+## Concrete implementation
 
-`EntryPoint<T>` is the first explicit processing boundary. Its input type defines what it consumes,
-while its `process(items: List<T>)` function defines how those items become representations emitted
-into the processing topology. The topology decides where those outputs go next.
-
-## Report rendering
-
-The example reports include `topology.png`, rendered with Graphviz, and the corresponding
-`topology.dot` source. The renderer traverses `Topology.nodes`, each node's `ports`, and each port's
-outgoing `synapses`. It draws nodes and directed connections between their owners; ports are not
-drawn separately. Multiple connections between the same pair of nodes appear as one arrow.
-All nodes, including disconnected nodes, remain visible. Connected nodes must be included in
-`Topology.nodes`.
-
-Install Graphviz and make `dot` available on `PATH`, or set `GRAPHVIZ_DOT` to the full path of the
-executable. Run `./gradlew renderExampleReports` (or `gradlew.bat renderExampleReports` on Windows).
-CI installs Graphviz and includes the topology images alongside the existing report charts.
+The current reference implementation and its report pipeline are described in
+[Default topology](default-topology.md).
 
 ## Topology ownership
 
 `Topology` exposes `nodes`, a derived read-only `entryPoints` list, and `update()`. The nodes and their
-port connections define the network. `DefaultTopology` owns environment polling and entrypoint dispatch.
-Topology implementations can later take responsibility for:
+port connections define the network. A topology implementation may take responsibility for:
 
 - nodes;
 - synapses;
@@ -215,7 +173,7 @@ construct their own connections.
 
 ### Occupied ports
 
-`SingleSlotPort` rejects a second value while occupied. Future port policies may support:
+Port policies may support:
 
 - queues;
 - replacement by newest value;
@@ -228,9 +186,8 @@ a generic port.
 
 ### Processing failures
 
-If a node fails while processing, its port values should remain available unless the node explicitly
-cleared them first. The topology will eventually need a policy for retries, dead letters, or failure
-propagation.
+The topology needs a policy for whether values remain available after a processing failure, and how
+retries, dead letters, or failure propagation should work.
 
 ### Multiple sources for one port
 
@@ -244,9 +201,8 @@ ports to feed one logical input. The topology needs to define whether that means
 
 ### Scheduling and cycles
 
-The first implementation uses synchronous delivery and notification. Later scheduling may need
-immediate processing, complete-input-set processing, periodic processing, batching, asynchronous
-nodes, parallel nodes, and safe handling of feedback cycles without unbounded recursion.
+Scheduling may need immediate processing, complete-input-set processing, periodic processing, batching,
+asynchronous nodes, parallel nodes, and safe handling of feedback cycles without unbounded recursion.
 
 ### Representation identity
 
@@ -254,17 +210,7 @@ The topology may eventually need metadata around representations, such as creati
 node and port, sequence number, correlation or batch identifier, and semantic type. This is especially
 relevant when several representations arrive at a multi-input node and need to be matched.
 
-## Incremental implementation
+## Implementation notes
 
-The proposed implementation order is:
-
-1. complete `SingleSlotPort` behaviour;
-2. add `Synapse` delivery and port fan-out;
-3. convert a simple one-input node to subscribe to `onReceive`;
-4. convert an `AttentionNode` with query, key, value, and output ports;
-5. add topology construction and validation;
-6. connect entrypoints to the topology;
-7. introduce scheduling only when experiments require it.
-
-This keeps the first topology implementation small while preserving the ability to support
-multi-input, multi-output processing later.
+The topology contract deliberately leaves buffering, scheduling, validation, and multi-input
+correlation open. See [Default topology](default-topology.md) for the current reference choices.

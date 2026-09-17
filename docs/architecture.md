@@ -172,9 +172,10 @@ For the detailed signal model, see [Signals and samples](signals.md). For bounde
 
 The signal model should preserve stable signal identity while allowing integrations to describe signals through open-ended metadata.
 
-The current runtime gives `Vaettr` an `Environment` reference. `Vaettr.update()` asks that
-environment for newly available values, while `Entity` remains the semantic object those values
-describe.
+The current runtime gives `Vaettr` an `Environment` reference and a `Topology`. `Vaettr.update()`
+delegates to the topology; the reference topology asks the environment for newly available values,
+while `Entity` remains the semantic object those values describe. See [Default topology](default-topology.md)
+for the current concrete composition.
 
 A tentative model is:
 
@@ -195,7 +196,7 @@ classDiagram
 
 An **Environment** is the external world, system, or simulation that provides Samples to Skynvættr
 and is eventually affected through effectors. In the current runtime, it provides newly available
-values through `getNew<T>()` when `Vaettr.update()` polls it.
+values through `getNew<T>()` when the topology advances during `Vaettr.update()`.
 
 Examples include:
 

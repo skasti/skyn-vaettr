@@ -1,25 +1,30 @@
 # Representations and processing primitives
 
 Skynvættr treats a running `Vaettr` as the update orchestrator and keeps its typed entrypoints replaceable.
-The planned port-and-synapse topology is described in [Processing topology](topology.md).
+The port-and-synapse topology is described in [Processing topology](topology.md).
+The concrete reference network is described in [Default topology](default-topology.md).
 
 ```mermaid
 flowchart TD
     ENV[Environment] -->|New values| Vaettr 
-    Vaettr --> EntryPoints[EntryPoints] 
-    EntryPoints --> Perception[Perception] 
-    EntryPoints --> Memory[Memory] 
-    EntryPoints --> Higher[Higher-level models] 
-    Perception --> Representation[Representation] 
-    Memory --> Representation 
-    Higher --> Representation 
+    Vaettr --> Topology[Topology]
+    Topology --> EntryPoints[EntryPoints]
+    EntryPoints --> Nodes[Processing nodes]
+    Nodes --> Representation[Representation]
     EntryPoints --> Store[MutableSampleStore] 
     Store --> Consumers[Replay / episodes]
 ```
 
-`Vaettr` holds an `Environment` and a private list of typed `EntryPoint<T>` instances. On each `update()`, it asks the environment for values newly available for each entrypoint and passes non-empty batches to `EntryPoint.process(...)`. Each entrypoint returns a `Representation`.
+`Vaettr` holds an `Environment` and a `Topology`, defaulting to `DefaultTopology`. On each `update()`,
+it delegates to `Topology.update()`. `DefaultTopology` discovers typed `EntryPoint<T>` nodes, asks the
+environment for new values once per input type, and passes non-empty batches to matching entrypoints.
+Entrypoints emit representations through their ports; they do not return a representation from
+`process(...)`.
 
-`EntryPoint<T>` is the first explicit processing boundary. Its input type defines what it consumes, while its `process(items: List<T>)` function defines how those items become a representation. The rest of the processing topology remains intentionally undefined.
+`EntryPoint<T>` is the first explicit processing boundary. Its input type defines what it consumes,
+while its `process(items: List<T>)` function defines which representations it emits through its ports.
+Those ports can feed downstream processing nodes. The current reference wiring is documented in
+[Default topology](default-topology.md).
 
 Experiments therefore exercise Skynvættr through the same top-level API rather than invoking isolated model classes directly:
 
@@ -92,9 +97,10 @@ The default currently supports numeric and boolean sample values because those a
 
 The entrypoint deliberately stops at this generic input `Representation`. The strongest playpen
 attention result used normalized values plus learned input/key/value projections and a learned
-latent query trained from a prediction objective. Applying scaled dot-product attention directly to
-raw sensory vectors would therefore be a different, unvalidated model. Learned contextualization
-belongs in later processing components once training/model ownership is established.
+latent query trained from a prediction objective. The initial topology can connect identity Q/K/V
+projections to scaled dot-product attention as an inspectable baseline, but that is not presented as
+the validated learned model. Learned contextualization belongs in later processing components once
+training and model ownership are established.
 
 ## Representation
 
@@ -122,7 +128,10 @@ Tokenization and signal embedding are not global Skynvættr pipeline stages. The
 softmax(Q K^T / sqrt(d_k)) V
 ```
 
-It deliberately does not own Q/K/V projection matrices, optimizer state, prediction heads, normalization, or training policy. Those remain concerns of the model/module using attention.
+It deliberately does not own Q/K/V projection matrices, optimizer state, prediction heads, normalization,
+or training policy. Separate projection stages can provide Q/K/V inputs, and their parameter ownership
+remains outside the attention operation. See [Default topology](default-topology.md) for the current
+reference projection nodes.
 
 ## Current boundary
 
@@ -130,13 +139,15 @@ This revision establishes:
 
 - `Environment` as the provider of newly available values;
 - `Vaettr` as the update orchestrator;
+- `Topology` and `DefaultTopology` as the node and entrypoint orchestration boundary;
 - `EntryPoint<T>` as the typed processing boundary;
 - `SampleEntryPoint` as the initial default sensory front-end;
+- Q/K/V projection nodes and `AttentionNode` as the initial attention pipeline;
+- synchronous ports, synapses, and Graphviz topology rendering;
 - `MutableSampleStore` as the canonical observation history owned by the sample entrypoint;
 - `Representation`/`Embedding` as generic latent numeric data;
 - replaceable embedding and attention contracts with current baseline implementations.
 
-It does not yet define a generalized processing graph, entrypoint scheduling, a module interface, a
-Transformer, working-memory semantics, effector routing, an optimizer, model discovery or a full
-training lifecycle. Those should be introduced from experiments that exercise `Vaettr.update()`
-rather than designed in isolation.
+It does not yet define asynchronous scheduling, a module interface, a Transformer, working-memory
+semantics, effector routing, an optimizer, model discovery or a full training lifecycle. Those should
+be introduced from experiments that exercise `Vaettr.update()` rather than designed in isolation.
