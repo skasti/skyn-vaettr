@@ -23,6 +23,11 @@ val reporting by sourceSets.creating {
 configurations[reporting.implementationConfigurationName].extendsFrom(configurations["implementation"])
 configurations[reporting.runtimeOnlyConfigurationName].extendsFrom(configurations["runtimeOnly"])
 
+sourceSets.test {
+    compileClasspath += reporting.output
+    runtimeClasspath += reporting.output
+}
+
 dependencies {
     testImplementation(kotlin("test"))
     add(reporting.implementationConfigurationName, "org.knowm.xchart:xchart:3.8.8")

@@ -18,7 +18,8 @@ object KitchenLightScenarioReport {
 
         val world = KitchenLightScenario()
         val sampleEntryPoint = SampleEntryPoint()
-        val vaettr = Vaettr(world, DefaultTopology(world, listOf(sampleEntryPoint)))
+        val topology = DefaultTopology(world, listOf(sampleEntryPoint))
+        val vaettr = Vaettr(world, topology)
         val duration = Duration.ofDays(10)
         world.simulate(
             vaettr = vaettr,
@@ -41,6 +42,8 @@ object KitchenLightScenarioReport {
             ),
             output = reportDir.resolve("day.png"),
         )
+
+        TopologyRenderer().render(topology, reportDir)
 
         Files.writeString(
             reportDir.resolve("summary.md"),

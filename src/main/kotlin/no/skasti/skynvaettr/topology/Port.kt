@@ -10,6 +10,8 @@ import no.skasti.skynvaettr.runtime.ReceiveEvent
  */
 interface Port<T> {
     val name: String
+    /** Outgoing connections from this port, exposed for topology inspection. */
+    val synapses: List<Synapse<T>>
     val onReceive: ReceiveEvent
 
     fun emit(value: T)

@@ -21,7 +21,8 @@ object ThermalExpectationReport {
 
         val world = ThermalExpectationScenario()
         val sampleEntryPoint = SampleEntryPoint()
-        val vaettr = Vaettr(world, DefaultTopology(world, listOf(sampleEntryPoint)))
+        val topology = DefaultTopology(world, listOf(sampleEntryPoint))
+        val vaettr = Vaettr(world, topology)
         val duration = Duration.ofDays(1)
         val reportStart = Instant.EPOCH
         val reportEnd = reportStart.plus(duration)
@@ -60,6 +61,8 @@ object ThermalExpectationReport {
             ),
             output = reportDir.resolve("expectations.png"),
         )
+
+        TopologyRenderer().render(topology, reportDir)
 
         Files.writeString(
             reportDir.resolve("summary.md"),

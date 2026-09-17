@@ -170,6 +170,19 @@ output ports; `Vaettr.update()` does not collect or return those representations
 while its `process(items: List<T>)` function defines how those items become representations emitted
 into the processing topology. The topology decides where those outputs go next.
 
+## Report rendering
+
+The example reports include `topology.png`, rendered with Graphviz, and the corresponding
+`topology.dot` source. The renderer traverses `Topology.nodes`, each node's `ports`, and each port's
+outgoing `synapses`. It draws nodes and directed connections between their owners; ports are not
+drawn separately. Multiple connections between the same pair of nodes appear as one arrow.
+All nodes, including disconnected nodes, remain visible. Connected nodes must be included in
+`Topology.nodes`.
+
+Install Graphviz and make `dot` available on `PATH`, or set `GRAPHVIZ_DOT` to the full path of the
+executable. Run `./gradlew renderExampleReports` (or `gradlew.bat renderExampleReports` on Windows).
+CI installs Graphviz and includes the topology images alongside the existing report charts.
+
 ## Topology ownership
 
 `Topology` exposes `nodes`, a derived read-only `entryPoints` list, and `update()`. The nodes and their

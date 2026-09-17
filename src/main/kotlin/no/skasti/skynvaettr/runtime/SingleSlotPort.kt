@@ -35,7 +35,9 @@ class ReceiveEvent {
 class SingleSlotPort<T>(
     override val name: String,
 ) : Port<T> {
-    private val outgoing = mutableListOf<Synapse<T>>()
+    private val connections = mutableListOf<Synapse<T>>()
+    override val synapses: List<Synapse<T>>
+        get() = connections.toList()
 
     var pending: T? = null
         private set
@@ -43,7 +45,7 @@ class SingleSlotPort<T>(
     override val onReceive = ReceiveEvent()
 
     override fun emit(value: T) {
-        outgoing.toList().forEach { synapse -> synapse.deliver(value) }
+        connections.toList().forEach { synapse -> synapse.deliver(value) }
     }
 
     override fun receive(value: T) {
@@ -60,5 +62,5 @@ class SingleSlotPort<T>(
     }
 
     override fun connectTo(target: Port<T>): Synapse<T> =
-        Synapse(source = this, target = target).also(outgoing::add)
+        Synapse(source = this, target = target).also(connections::add)
 }
