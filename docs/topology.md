@@ -141,7 +141,10 @@ interface EntryPoint<T : Any> : Node {
     fun process(items: List<T>)
 }
 ```
-For example, a sample entrypoint may expose separate ports for:
+`T` should be a specific input type rather than a catch-all such as `Any`; distinct entrypoint types
+must also not overlap through inheritance or interface implementation. This lets the topology fetch
+and dispatch each input stream independently. For example, a sample entrypoint may expose separate
+ports for:
 
 - raw sample representations;
 - signal identity representations;

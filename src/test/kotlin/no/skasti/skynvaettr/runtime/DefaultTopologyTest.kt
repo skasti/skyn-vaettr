@@ -3,8 +3,10 @@ package no.skasti.skynvaettr.runtime
 import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertSame
+import kotlin.reflect.KClass
 import no.skasti.skynvaettr.environment.InMemoryEnvironment
 import no.skasti.skynvaettr.representation.Embedding
 import no.skasti.skynvaettr.representation.Representation
@@ -80,6 +82,28 @@ class DefaultTopologyTest {
         topology.update()
 
         assertEquals(listOf(sample), topologyStore.get(Instant.MIN, Instant.MAX))
+    }
+
+    @Test
+    fun `rejects entrypoints with any as input type`() {
+        val environment = InMemoryEnvironment()
+        val anyEntryPoint = AnyEntryPoint()
+
+        assertFailsWith<IllegalArgumentException> {
+            DefaultTopology(environment, nodes = listOf(anyEntryPoint))
+        }
+    }
+
+    @Test
+    fun `rejects overlapping entrypoint input types`() {
+        val environment = InMemoryEnvironment()
+
+        assertFailsWith<IllegalArgumentException> {
+            DefaultTopology(
+                environment,
+                nodes = listOf(BaseEntryPoint(), DerivedEntryPoint()),
+            )
+        }
     }
 
     @Test
@@ -192,6 +216,34 @@ class DefaultTopologyTest {
             received += items
             output.emit(Representation.of(Embedding.of(items.first().length.toDouble())))
         }
+    }
+
+    private class AnyEntryPoint : EntryPoint<Any> {
+        override val name = "AnyEntryPoint"
+        override val inputType = Any::class
+        override val ports: List<Port<*>> = emptyList()
+
+        override fun process(items: List<Any>) = Unit
+    }
+
+    private open class BaseValue
+
+    private class DerivedValue : BaseValue()
+
+    private class BaseEntryPoint : EntryPoint<BaseValue> {
+        override val name = "BaseEntryPoint"
+        override val inputType: KClass<BaseValue> = BaseValue::class
+        override val ports: List<Port<*>> = emptyList()
+
+        override fun process(items: List<BaseValue>) = Unit
+    }
+
+    private class DerivedEntryPoint : EntryPoint<DerivedValue> {
+        override val name = "DerivedEntryPoint"
+        override val inputType: KClass<DerivedValue> = DerivedValue::class
+        override val ports: List<Port<*>> = emptyList()
+
+        override fun process(items: List<DerivedValue>) = Unit
     }
 
     private class TestGroup(

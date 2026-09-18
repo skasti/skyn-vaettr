@@ -64,6 +64,8 @@ This means two entrypoints with the same input type receive the same batch. Empt
 `SampleEntryPoint` is constructed with that store; custom sample entrypoints must receive the same
 store when they are constructed. This keeps ingestion separate from representation processing and
 prevents a shared history from receiving duplicate batches.
+Entrypoint input types must be specific and non-overlapping; `DefaultTopology` rejects `Any` and
+types related through inheritance or interface implementation.
 Processing and port delivery are synchronous in this implementation.
 
 ## Current example network

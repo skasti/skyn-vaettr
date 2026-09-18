@@ -9,7 +9,8 @@ import kotlin.reflect.KClass
  * [process]. This keeps entrypoints compatible with the same topology as other nodes.
  *
  * [inputType] lets the runtime dispatch a heterogeneous list of entrypoints without weakening the
- * type of [process].
+ * type of [process]. It must identify a specific input type; broad catch-all types such as `Any`
+ * are not valid topology entrypoints, and distinct entrypoint types must not overlap.
  */
 interface EntryPoint<T : Any>: Node {
     val inputType: KClass<T>

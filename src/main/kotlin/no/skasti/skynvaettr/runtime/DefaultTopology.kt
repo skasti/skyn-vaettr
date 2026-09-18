@@ -9,6 +9,7 @@ import java.util.Collections
 import java.util.IdentityHashMap
 import no.skasti.skynvaettr.environment.Environment
 import kotlin.reflect.KClass
+import no.skasti.skynvaettr.topology.EntryPoint
 import no.skasti.skynvaettr.topology.Node
 import no.skasti.skynvaettr.topology.Topology
 import no.skasti.skynvaettr.topology.TopologyBuilder
@@ -19,6 +20,7 @@ import no.skasti.skynvaettr.topology.Group
  *
  * [update] pulls newly available values from [environment] and processes them through the configured
  * entrypoints. Each input type is fetched once per update and shared with all matching entrypoints.
+ * Sample batches are appended to [sampleStore] once before dispatch.
  */
 class DefaultTopology(
     private val environment: Environment,
@@ -33,6 +35,23 @@ class DefaultTopology(
         val topologyNodes = Collections.newSetFromMap(IdentityHashMap<Node, Boolean>())
         this.nodes.forEach { node ->
             require(topologyNodes.add(node)) { "the same node cannot appear twice in a topology" }
+        }
+        this.nodes.filterIsInstance<EntryPoint<*>>().forEach { entryPoint ->
+            require(entryPoint.inputType != Any::class) {
+                "entrypoint '${entryPoint.name}' must declare a specific input type, not Any"
+            }
+        }
+        val entryPointTypes = this.nodes
+            .filterIsInstance<EntryPoint<*>>()
+            .map { it.inputType }
+            .distinct()
+        entryPointTypes.forEachIndexed { index, type ->
+            entryPointTypes.drop(index + 1).forEach { otherType ->
+                require(!type.overlaps(otherType)) {
+                    "entrypoint input types '${type.javaObjectType.simpleName}' and " +
+                        "'${otherType.javaObjectType.simpleName}' overlap"
+                }
+            }
         }
         val groupNames = mutableSetOf<String>()
         val groupedNodes = Collections.newSetFromMap(IdentityHashMap<Node, Boolean>())
@@ -85,4 +104,8 @@ class DefaultTopology(
         @Suppress("UNCHECKED_CAST")
         return raw as List<T>
     }
+
+    private fun KClass<*>.overlaps(other: KClass<*>): Boolean =
+        javaObjectType.isAssignableFrom(other.javaObjectType) ||
+            other.javaObjectType.isAssignableFrom(javaObjectType)
 }
