@@ -17,8 +17,8 @@ flowchart TD
 
 `Vaettr` holds an `Environment` and a `Topology`, defaulting to `DefaultTopology`. On each `update()`,
 it delegates to `Topology.update()`. `DefaultTopology` discovers typed `EntryPoint<T>` nodes, asks the
-environment for new values once per input type, stores each sample batch once in its canonical
-`MutableSampleStore`, and passes non-empty batches to matching entrypoints. Entrypoints emit
+environment for new values once with all requested input types, stores each sample batch once in its
+canonical `MutableSampleStore`, and passes non-empty batches to matching entrypoints. Entrypoints emit
 representations through their ports; they do not return a representation from `process(...)`.
 
 `EntryPoint<T>` is the first explicit processing boundary. Its input type defines what it consumes,

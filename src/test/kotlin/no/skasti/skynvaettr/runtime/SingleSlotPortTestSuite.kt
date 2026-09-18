@@ -88,6 +88,29 @@ class SingleSlotPortTest {
     }
 
     @Test
+    fun `receiveFrom can declare several sources`() {
+        val firstOutput = SingleSlotPort<Representation>("first-output")
+        val secondOutput = SingleSlotPort<Representation>("second-output")
+        val input = SingleSlotPort<Representation>("input")
+
+        input.receiveFrom(firstOutput, secondOutput)
+
+        assertEquals(
+            listOf(input, input),
+            listOf(firstOutput, secondOutput).flatMap { it.synapses }.map { it.target },
+        )
+    }
+
+    @Test
+    fun `receiveFrom rejects an empty source list`() {
+        val input = SingleSlotPort<Representation>("input")
+
+        assertFailsWith<IllegalArgumentException> {
+            input.receiveFrom()
+        }
+    }
+
+    @Test
     fun `unsubscribe stops receive event delivery`() {
         val port = SingleSlotPort<Representation>("input")
         val received = mutableListOf<Port<*>>()

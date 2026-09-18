@@ -18,6 +18,12 @@ interface Port<T: Any> {
 
     fun receive(value: T)
 
-    /** Connects this port to one or more targets. */
+    /** Connects this port as the source to one or more target ports. */
     fun connectTo(vararg targets: Port<T>)
+
+    /** Connects this port as the target to one or more source ports. */
+    fun receiveFrom(vararg sources: Port<T>) {
+        require(sources.isNotEmpty()) { "receiveFrom requires at least one source" }
+        sources.forEach { source -> source.connectTo(this) }
+    }
 }

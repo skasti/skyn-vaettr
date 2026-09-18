@@ -196,7 +196,9 @@ classDiagram
 
 An **Environment** is the external world, system, or simulation that provides Samples to Skynvættr
 and is eventually affected through effectors. In the current runtime, it provides newly available
-values through `getNew<T>()` when the topology advances during `Vaettr.update()`.
+values through `getNew(types)` when the topology advances during `Vaettr.update()`. The result has
+one batch per requested input type; a value matching multiple types appears in each corresponding
+batch.
 
 Examples include:
 

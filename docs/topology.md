@@ -32,6 +32,11 @@ whose input it consumes.
 Nodes expose a human-readable `name` used by topology tooling. It defaults to the concrete class name,
 but node implementations and instances may provide a more useful label.
 
+Named ports can be looked up with `node.port("name")`; `node["name"]` is equivalent shorthand. The
+generic return type is inferred from an assignment or when the port is passed as a connection
+argument. When the lookup is the receiver of a call, Kotlin needs an explicit type, such as
+`node.port<Representation>("output")`.
+
 The node decides whether to process immediately, wait for other inputs, accumulate state, or take
 some other action. The `onReceive` event only tells the node that a port's input state changed; it
 does not require immediate processing.
@@ -44,7 +49,8 @@ A **Port** is a named endpoint owned by a node. A port has both sending and rece
 - `receive(value)` accepts a value from an incoming synapse;
 - `onReceive` notifies subscribers after a value has been accepted;
 - `synapses` exposes the port's outgoing connections for topology inspection;
-- `connectTo(vararg targets)` creates outgoing synapses.
+- `connectTo(vararg targets)` creates outgoing synapses from this port.
+- `receiveFrom(vararg sources)` creates incoming synapses to this port.
 
 Buffering policy is deliberately outside the generic port contract. An implementation may retain one
 value, queue values, replace an existing value, or use another policy. Nodes should only depend on the
@@ -141,10 +147,10 @@ interface EntryPoint<T : Any> : Node {
     fun process(items: List<T>)
 }
 ```
-`T` should be a specific input type rather than a catch-all such as `Any`; distinct entrypoint types
-must also not overlap through inheritance or interface implementation. This lets the topology fetch
-and dispatch each input stream independently. For example, a sample entrypoint may expose separate
-ports for:
+`T` should be a specific input type rather than a catch-all such as `Any`. Distinct entrypoint types
+may overlap through inheritance or interface implementation; the environment delivers a matching
+value in every corresponding batch. This lets the topology dispatch each input stream independently.
+For example, a sample entrypoint may expose separate ports for:
 
 - raw sample representations;
 - signal identity representations;

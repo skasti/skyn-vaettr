@@ -19,8 +19,10 @@ import no.skasti.skynvaettr.topology.Group
  * Initial topology that dispatches new environment values to typed entrypoints.
  *
  * [update] pulls newly available values from [environment] and processes them through the configured
- * entrypoints. Each input type is fetched once per update and shared with all matching entrypoints.
+ * entrypoints. All distinct input types are fetched together once per update and shared with all
+ * matching entrypoints.
  * Sample batches are appended to [sampleStore] once before dispatch.
+ * A value matching multiple entrypoint types is delivered in each corresponding batch.
  */
 class DefaultTopology(
     private val environment: Environment,
@@ -39,18 +41,6 @@ class DefaultTopology(
         this.nodes.filterIsInstance<EntryPoint<*>>().forEach { entryPoint ->
             require(entryPoint.inputType != Any::class) {
                 "entrypoint '${entryPoint.name}' must declare a specific input type, not Any"
-            }
-        }
-        val entryPointTypes = this.nodes
-            .filterIsInstance<EntryPoint<*>>()
-            .map { it.inputType }
-            .distinct()
-        entryPointTypes.forEachIndexed { index, type ->
-            entryPointTypes.drop(index + 1).forEach { otherType ->
-                require(!type.overlaps(otherType)) {
-                    "entrypoint input types '${type.javaObjectType.simpleName}' and " +
-                        "'${otherType.javaObjectType.simpleName}' overlap"
-                }
             }
         }
         val groupNames = mutableSetOf<String>()
@@ -86,7 +76,8 @@ class DefaultTopology(
 
     override fun update() {
         val entryPoints = entryPoints
-        val batches = entryPoints.map { it.inputType }.distinct().associateWith { environment.getNew(it) }
+        val inputTypes = entryPoints.map { it.inputType }.distinct()
+        val batches = environment.getNew(inputTypes)
         batches[Sample::class]?.let { rawBatch ->
             @Suppress("UNCHECKED_CAST")
             val samples = rawBatch as List<Sample<*>>
@@ -99,13 +90,9 @@ class DefaultTopology(
         }
     }
 
-    private fun <T: Any> Map<KClass<out Any>, List<Any>>.getItems(inputType: KClass<*>): List<T> {
+    private fun <T: Any> Map<KClass<*>, List<Any>>.getItems(inputType: KClass<*>): List<T> {
         val raw = this[inputType] ?: return emptyList()
         @Suppress("UNCHECKED_CAST")
         return raw as List<T>
     }
-
-    private fun KClass<*>.overlaps(other: KClass<*>): Boolean =
-        javaObjectType.isAssignableFrom(other.javaObjectType) ||
-            other.javaObjectType.isAssignableFrom(javaObjectType)
 }

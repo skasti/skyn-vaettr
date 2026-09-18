@@ -55,7 +55,7 @@ type can still provide typed properties that delegate to `port("input")` when th
 On each update, `DefaultTopology`:
 
 1. collects the distinct input types declared by its entrypoints;
-2. calls `Environment.getNew(type)` once for each distinct type;
+2. calls `Environment.getNew(types)` once with all distinct types;
 3. appends each non-empty `Sample` batch once to its canonical `MutableSampleStore`;
 4. passes each non-empty batch to every entrypoint declaring that type.
 
@@ -64,8 +64,8 @@ This means two entrypoints with the same input type receive the same batch. Empt
 `SampleEntryPoint` is constructed with that store; custom sample entrypoints must receive the same
 store when they are constructed. This keeps ingestion separate from representation processing and
 prevents a shared history from receiving duplicate batches.
-Entrypoint input types must be specific and non-overlapping; `DefaultTopology` rejects `Any` and
-types related through inheritance or interface implementation.
+Entrypoint input types must be specific; `DefaultTopology` rejects `Any`. Overlapping input types
+are allowed, and the environment includes a matching value in each corresponding batch.
 Processing and port delivery are synchronous in this implementation.
 
 ## Current example network

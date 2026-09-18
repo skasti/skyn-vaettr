@@ -16,16 +16,15 @@ open class InMemoryEnvironment : Environment {
 
     fun append(item: Any) = append(listOf(item))
 
-    override fun <T : Any> getNew(type: KClass<T>): List<T> {
-        val objectType = type.javaObjectType
-        val matching = items.filter { objectType.isInstance(it) }
-        val consumed = consumedCounts[type] ?: 0
-        require(consumed <= matching.size) {
-            "environment items cannot be removed while consumption is tracked"
+    override fun getNew(types: List<KClass<*>>): Map<KClass<*>, List<Any>> =
+        types.distinct().associateWith { type ->
+            val objectType = type.javaObjectType
+            val matching = items.filter { objectType.isInstance(it) }
+            val consumed = consumedCounts[type] ?: 0
+            require(consumed <= matching.size) {
+                "environment items cannot be removed while consumption is tracked"
+            }
+            consumedCounts[type] = matching.size
+            matching.drop(consumed)
         }
-        consumedCounts[type] = matching.size
-        return matching
-            .drop(consumed)
-            .map { item -> objectType.cast(item) }
-    }
 }
