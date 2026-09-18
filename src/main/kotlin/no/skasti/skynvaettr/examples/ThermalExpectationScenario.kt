@@ -5,6 +5,8 @@ import java.time.Instant
 import kotlin.math.PI
 import kotlin.math.pow
 import kotlin.math.sin
+import no.skasti.skynvaettr.Vaettr
+import no.skasti.skynvaettr.environment.InMemoryEnvironment
 import no.skasti.skynvaettr.signals.Sample
 import no.skasti.skynvaettr.signals.Signal
 
@@ -16,9 +18,9 @@ import no.skasti.skynvaettr.signals.Signal
  * fraction of the remaining delta per hour. The update uses exponential retention so changing the
  * simulation step does not materially change the thermal time constant.
  *
- * The intended learning task is for a model attached to the Vaettr processing graph to develop a
- * continuously updated expectation of future sensor.indoor.temperature from accumulated history.
- * This scenario deliberately contains no hand-coded predictor and exposes only sensor samples.
+ * The intended learning task is for later processing to develop a continuously updated expectation
+ * of future sensor.indoor.temperature from accumulated history. This scenario deliberately contains
+ * no hand-coded predictor and exposes only sensor samples.
  */
 class ThermalExpectationScenario(
     val outdoorTemperature: Signal<Double> = Signal("sensor.outdoor.temperature"),
@@ -26,18 +28,19 @@ class ThermalExpectationScenario(
     private val minimumOutdoorTemperature: Double = 10.0,
     private val maximumOutdoorTemperature: Double = 25.0,
     private val hourlyDeltaFraction: Double = 0.10,
-) {
+) : InMemoryEnvironment() {
     init {
         require(minimumOutdoorTemperature < maximumOutdoorTemperature)
         require(hourlyDeltaFraction > 0.0 && hourlyDeltaFraction < 1.0)
     }
 
     fun simulate(
+        vaettr: Vaettr,
         duration: Duration,
         step: Duration,
         start: Instant = Instant.EPOCH,
-        onSense: (List<Sample<*>>) -> Unit,
     ) {
+        require(vaettr.environment === this) { "Vaettr must use this scenario as its environment" }
         require(!duration.isNegative && !duration.isZero)
         require(!step.isNegative && !step.isZero)
 
@@ -53,12 +56,13 @@ class ThermalExpectationScenario(
                 Duration.ofHours(1).toNanos().toDouble()
             val outdoor = outdoorTemperatureAt(elapsedHours)
 
-            onSense(
+            append(
                 listOf(
                     Sample(outdoorTemperature, outdoor, timestamp),
                     Sample(indoorTemperature, indoor, timestamp),
                 ),
             )
+            vaettr.update()
 
             indoor += (outdoor - indoor) * stepFraction
         }

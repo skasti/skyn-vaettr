@@ -24,6 +24,8 @@ jobs:
           gradle-version: "8.10.2"
       - name: Run tests
         run: gradle test --no-daemon
+      - name: Install Graphviz
+        run: sudo apt-get update && sudo apt-get install -y graphviz
       - name: Render example reports
         run: gradle renderExampleReports --no-daemon
       - name: Upload example reports

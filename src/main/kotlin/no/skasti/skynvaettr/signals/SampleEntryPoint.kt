@@ -1,33 +1,45 @@
-package no.skasti.skynvaettr.runtime
+package no.skasti.skynvaettr.signals
+
+import no.skasti.skynvaettr.runtime.SingleSlotPort
 
 import java.time.Duration
 import java.time.Instant
 import kotlin.math.abs
+import kotlin.reflect.KClass
 import no.skasti.skynvaettr.representation.Embedding
 import no.skasti.skynvaettr.representation.Embedder
 import no.skasti.skynvaettr.representation.Representation
 import no.skasti.skynvaettr.representation.SignalIdentityEmbedder
-import no.skasti.skynvaettr.signals.Sample
-import no.skasti.skynvaettr.signals.SampleStore
-import no.skasti.skynvaettr.signals.SignalId
+import no.skasti.skynvaettr.topology.EntryPoint
+import no.skasti.skynvaettr.topology.Port
 
 /**
- * Initial default sensing graph based on the strongest generic sensory pattern explored in playpen.
+ * Initial sample entrypoint based on the strongest generic sensory pattern explored in playpen.
  *
  * Historical observations come from the canonical [SampleStore]. Every signal is offered the same
  * generic log-spaced history ages, and selected observations retain their actual timestamp rather
  * than treating a sample as a state that remains valid until the next update.
  *
  * Each selected observation is represented from signal identity + scalar value + relative time.
- * The graph deliberately stops before learned projection and attention. The successful playpen
- * attention experiments normalized values and learned the input/key/value projections and latent
- * query from a prediction objective.
+ * The entrypoint deliberately stops before learned projection and attention. The successful
+ * playpen attention experiments normalized values and learned the input/key/value projections and
+ * latent query from a prediction objective.
+ *
+ * The owning topology ingests samples before [process] is called; processing only reads history
+ * and emits a representation.
  */
-class SensingProcessingGraph(
-    private val sampleStore: SampleStore,
+class SampleEntryPoint(
+    private val sampleStore: MutableSampleStore,
     private val signalEmbedder: Embedder<SignalId> = SignalIdentityEmbedder(),
     private val historyAges: List<Duration> = DEFAULT_HISTORY_AGES,
-) : ProcessingGraph {
+    override val name: String = "SampleEntryPoint",
+) : EntryPoint<Sample<*>> {
+
+    override val inputType: KClass<Sample<*>> = Sample::class
+    override val ports: List<Port<*>>
+        get() = listOf(output)
+    val output: Port<Representation> = SingleSlotPort("samples")
+
     var latestRepresentation: Representation? = null
         private set
 
@@ -38,15 +50,19 @@ class SensingProcessingGraph(
         require(maxHistoryAge > Duration.ZERO) { "history ages must include at least one positive duration" }
     }
 
-    override fun sense(samples: List<Sample<*>>) {
-        if (samples.isEmpty()) return
+    override fun process(items: List<Sample<*>>) {
+        require(items.isNotEmpty()) { "sample entrypoint requires at least one sample" }
 
-        val now = samples.maxOf { it.timestamp }
+        val now = items.maxOf { it.timestamp }
         val history = sampleStore.get(now.minus(maxHistoryAge), now.plusNanos(1))
         val observations = selectObservations(now, history)
-        if (observations.isEmpty()) return
+        require(observations.isNotEmpty()) { "sample entrypoint produced no observations" }
 
-        latestRepresentation = Representation.from(observations.map(::encode))
+        val representation = Representation.from(observations.map(::encode)).also {
+            latestRepresentation = it
+        }
+
+        output.emit(representation)
     }
 
     private fun selectObservations(
@@ -95,7 +111,7 @@ class SensingProcessingGraph(
             is Number -> value.toDouble().also { require(it.isFinite()) { "numeric sample values must be finite" } }
             is Boolean -> if (value) 1.0 else 0.0
             else -> error(
-                "Default sensing graph currently supports Number and Boolean sample values, got " +
+                "Default sample entrypoint currently supports Number and Boolean sample values, got " +
                     (value?.let { it::class.simpleName } ?: "null"),
             )
         }
