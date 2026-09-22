@@ -1,10 +1,27 @@
 package no.skasti.skynvaettr.environment
 
+import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import no.skasti.skynvaettr.signals.Sample
+import no.skasti.skynvaettr.signals.Signal
 
 class InMemoryEnvironmentTest {
+    @Test
+    fun `appended samples are available through the read only sample store`() {
+        val environment = InMemoryEnvironment()
+        val sample = Sample(Signal<Double>("temperature"), 20.0, Instant.EPOCH)
+
+        environment.append(sample)
+
+        assertEquals(listOf(sample), environment.sampleStore.get(Instant.MIN, Instant.MAX))
+        assertEquals(
+            listOf(sample),
+            environment.sampleStore.get(Instant.EPOCH, Instant.EPOCH.plusSeconds(1)),
+        )
+    }
+
     @Test
     fun `new input receives a monotonic processing sequence`() {
         val environment = InMemoryEnvironment()

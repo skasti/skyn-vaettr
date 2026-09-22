@@ -2,7 +2,6 @@ package no.skasti.skynvaettr.environment
 
 import java.time.Instant
 import kotlin.reflect.KClass
-import no.skasti.skynvaettr.signals.InMemorySampleStore
 import no.skasti.skynvaettr.signals.Sample
 import no.skasti.skynvaettr.signals.SampleStore
 import no.skasti.skynvaettr.signals.SignalId
@@ -34,7 +33,7 @@ open class InMemoryEnvironment : Environment, SampleStore {
     ): List<Sample<*>> {
         return items.filterIsInstance<Sample<*>>()
             .filter { sample ->
-                sample.timestamp > after && sample.timestamp < before &&
+                !sample.timestamp.isBefore(after) && sample.timestamp.isBefore(before) &&
                     (signals.isEmpty() || sample.signal.id in signals)
             }
     }
