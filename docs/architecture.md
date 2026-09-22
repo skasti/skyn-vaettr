@@ -196,9 +196,10 @@ classDiagram
 
 An **Environment** is the external world, system, or simulation that provides Samples to Skynvættr
 and is eventually affected through effectors. In the current runtime, it provides newly available
-values through `getNew(types)` when the topology advances during `Vaettr.update()`. The result has
-one batch per requested input type; a value matching multiple types appears in each corresponding
-batch.
+values through `getNew(types)` when the topology advances during `Vaettr.update()`. The result is a
+`ProcessingInput` with a monotonic sequence number and values grouped by requested input type. A
+value matching multiple types appears in each corresponding map entry. An environment may retain
+delivered processing inputs and expose them through `getHistory(types, from, to)` for replay.
 
 Examples include:
 

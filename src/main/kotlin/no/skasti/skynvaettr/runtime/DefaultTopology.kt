@@ -8,6 +8,7 @@ import no.skasti.skynvaettr.signals.SampleEntryPoint
 import java.util.Collections
 import java.util.IdentityHashMap
 import no.skasti.skynvaettr.environment.Environment
+import no.skasti.skynvaettr.environment.ProcessingInput
 import kotlin.reflect.KClass
 import no.skasti.skynvaettr.topology.EntryPoint
 import no.skasti.skynvaettr.topology.Node
@@ -20,7 +21,7 @@ import no.skasti.skynvaettr.topology.Group
  *
  * [update] pulls newly available values from [environment] and processes them through the configured
  * entrypoints. All distinct input types are fetched together once per update and shared with all
- * matching entrypoints.
+ * matching entrypoints. The environment assigns the returned [ProcessingInput] its replay sequence.
  * Sample batches are appended to [sampleStore] once before dispatch.
  * A value matching multiple entrypoint types is delivered in each corresponding batch.
  */
@@ -77,7 +78,8 @@ class DefaultTopology(
     override fun update() {
         val entryPoints = entryPoints
         val inputTypes = entryPoints.map { it.inputType }.distinct()
-        val batches = environment.getNew(inputTypes)
+        val input = environment.getNew(inputTypes) ?: return
+        val batches = input.values
         batches[Sample::class]?.let { rawBatch ->
             @Suppress("UNCHECKED_CAST")
             val samples = rawBatch as List<Sample<*>>
