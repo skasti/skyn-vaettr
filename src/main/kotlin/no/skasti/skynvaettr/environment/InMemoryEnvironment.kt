@@ -12,7 +12,6 @@ open class InMemoryEnvironment : Environment, SampleStore {
     private val items = mutableListOf<Any>()
     private val consumedCounts = mutableMapOf<KClass<*>, Int>()
     private val history = mutableListOf<ProcessingInput>()
-    private val mutableSampleStore = InMemorySampleStore()
     private var nextSequence: ULong = 1uL
 
     /** Read-only view of the samples ingested by this environment. */
@@ -24,9 +23,6 @@ open class InMemoryEnvironment : Environment, SampleStore {
             requireNotNull(item) { "environment items must not be null" }
         }
         this.items.addAll(nonNullItems)
-        nonNullItems.filterIsInstance<Sample<*>>().takeIf { it.isNotEmpty() }?.let {
-            mutableSampleStore.append(it)
-        }
     }
 
     fun append(item: Any) = append(listOf(item))
@@ -35,7 +31,13 @@ open class InMemoryEnvironment : Environment, SampleStore {
         after: Instant,
         before: Instant,
         vararg signals: SignalId,
-    ): List<Sample<*>> = mutableSampleStore.get(after, before, *signals)
+    ): List<Sample<*>> {
+        return items.filterIsInstance<Sample<*>>()
+            .filter { sample ->
+                sample.timestamp > after && sample.timestamp < before &&
+                    (signals.isEmpty() || sample.signal.id in signals)
+            }
+    }
 
     override fun getNew(types: List<KClass<*>>): ProcessingInput? {
         val values = types.distinct().associateWith { type ->
