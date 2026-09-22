@@ -76,4 +76,25 @@ class SampleEntryPointTest {
         val valueDimension = representation.dimensions - 2
         assertEquals(1.0, representation[0][valueDimension])
     }
+
+    @Test
+    fun `preserves sub millisecond relative timing`() {
+        val sampleStore = InMemorySampleStore()
+        val entryPoint =
+            SampleEntryPoint(
+                sampleStore = sampleStore,
+                historyAges = listOf(Duration.ofMillis(1), Duration.ZERO),
+            )
+        val signal = Signal<Double>("sensor.indoor.temperature")
+        val current = Sample(signal, 21.0, Instant.EPOCH.plusSeconds(1))
+        val historical = Sample(signal, 20.0, current.timestamp.minusNanos(500_000))
+
+        sampleStore.append(listOf(historical, current))
+        entryPoint.process(listOf(current))
+
+        val representation = assertNotNull(entryPoint.latestRepresentation)
+        val timeDimension = representation.dimensions - 1
+        assertEquals(-0.5, representation[0][timeDimension], absoluteTolerance = 1e-12)
+        assertEquals(0.0, representation[1][timeDimension])
+    }
 }

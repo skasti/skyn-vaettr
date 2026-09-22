@@ -44,6 +44,12 @@ class DefaultTopology(
         this.sampleStore = sampleStore ?: environmentSampleStore ?: InMemorySampleStore()
         this.nodes = nodes.toList()
 
+        this.nodes.filterIsInstance<SampleEntryPoint>().forEach { entryPoint ->
+            require(entryPoint.sampleStore === this.sampleStore) {
+                "sample entrypoints must use the topology sample store"
+            }
+        }
+
         val hasSampleEntryPoint = this.nodes
             .filterIsInstance<EntryPoint<*>>()
             .any { entryPoint -> entryPoint.inputType == no.skasti.skynvaettr.signals.Sample::class }

@@ -15,6 +15,7 @@ import no.skasti.skynvaettr.topology.Group
 import no.skasti.skynvaettr.topology.debugging.RecordingEntryPoint
 import no.skasti.skynvaettr.signals.Sample
 import no.skasti.skynvaettr.signals.SampleEntryPoint
+import no.skasti.skynvaettr.signals.InMemorySampleStore
 import no.skasti.skynvaettr.signals.Signal
 import org.junit.jupiter.api.assertDoesNotThrow
 
@@ -78,6 +79,19 @@ class DefaultTopologyTest {
         topology.update()
 
         assertEquals(listOf(sample), environment.get(Instant.MIN, Instant.MAX))
+    }
+
+    @Test
+    fun `rejects sample entrypoints that use a different store`() {
+        val environment = InMemoryEnvironment()
+        val otherStore = InMemorySampleStore()
+
+        assertFailsWith<IllegalArgumentException> {
+            DefaultTopology(
+                environment,
+                nodes = listOf(SampleEntryPoint(otherStore)),
+            )
+        }
     }
 
     @Test

@@ -3,6 +3,7 @@ package no.skasti.skynvaettr.environment
 import java.time.Instant
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 import no.skasti.skynvaettr.signals.Sample
 import no.skasti.skynvaettr.signals.Signal
@@ -45,6 +46,42 @@ class InMemoryEnvironmentTest {
 
         assertNull(environment.getNew(listOf(Int::class)))
         assertEquals(emptyList(), environment.getHistory(listOf(Int::class), 1uL, 10uL))
+    }
+
+    @Test
+    fun `append rejects a batch without exposing a partial batch`() {
+        val environment = InMemoryEnvironment()
+
+        assertFailsWith<IllegalArgumentException> {
+            environment.append(listOf(1, null))
+        }
+
+        assertNull(environment.getNew(listOf(Int::class)))
+    }
+
+    @Test
+    fun `history projects retained values to compatible requested types`() {
+        val environment = InMemoryEnvironment()
+        environment.append("one")
+        environment.getNew(listOf(String::class))
+
+        val history = environment.getHistory(listOf(CharSequence::class), 1uL, 2uL)
+
+        assertEquals(listOf("one"), history.single().values[CharSequence::class])
+    }
+
+    @Test
+    fun `sample queries return samples in chronological order`() {
+        val environment = InMemoryEnvironment()
+        val signal = Signal<Double>("temperature")
+        val later = Sample(signal, 21.0, Instant.EPOCH.plusSeconds(2))
+        val earlier = Sample(signal, 20.0, Instant.EPOCH.plusSeconds(1))
+        environment.append(listOf(later, earlier))
+
+        assertEquals(
+            listOf(earlier, later),
+            environment.get(Instant.MIN, Instant.MAX),
+        )
     }
 
     @Test

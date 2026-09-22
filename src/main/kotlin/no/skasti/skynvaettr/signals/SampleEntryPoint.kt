@@ -4,7 +4,6 @@ import no.skasti.skynvaettr.runtime.SingleSlotPort
 
 import java.time.Duration
 import java.time.Instant
-import kotlin.math.abs
 import kotlin.reflect.KClass
 import no.skasti.skynvaettr.representation.Embedding
 import no.skasti.skynvaettr.representation.Embedder
@@ -29,7 +28,7 @@ import no.skasti.skynvaettr.topology.Port
  * and emits a representation.
  */
 class SampleEntryPoint(
-    private val sampleStore: SampleStore,
+    val sampleStore: SampleStore,
     private val signalEmbedder: Embedder<SignalId> = SignalIdentityEmbedder(),
     private val historyAges: List<Duration> = DEFAULT_HISTORY_AGES,
     override val name: String = "SampleEntryPoint",
@@ -76,7 +75,7 @@ class SampleEntryPoint(
                 val selected = linkedSetOf<Sample<*>>()
                 historyAges.forEach { age ->
                     val target = now.minus(age)
-                    signalSamples.minByOrNull { sample -> distanceMillis(sample.timestamp, target) }?.let(selected::add)
+                    signalSamples.minByOrNull { sample -> distance(sample.timestamp, target) }?.let(selected::add)
                 }
                 selected.sortedBy { it.timestamp }.forEach { sample ->
                     add(
@@ -92,13 +91,15 @@ class SampleEntryPoint(
     private fun relativeTime(
         timestamp: Instant,
         now: Instant,
-    ): Double =
-        Duration.between(now, timestamp).toMillis().toDouble() / maxHistoryAge.toMillis().toDouble()
+    ): Double = durationInSeconds(Duration.between(now, timestamp)) / durationInSeconds(maxHistoryAge)
 
-    private fun distanceMillis(
+    private fun distance(
         left: Instant,
         right: Instant,
-    ): Long = abs(Duration.between(left, right).toMillis())
+    ): Duration = Duration.between(left, right).abs()
+
+    private fun durationInSeconds(duration: Duration): Double =
+        duration.seconds.toDouble() + duration.nano.toDouble() / NANOS_PER_SECOND
 
     private fun encode(observation: SensoryObservation): Embedding {
         val identity = signalEmbedder.embed(observation.sample.signal.id).toDoubleArray()
@@ -125,6 +126,8 @@ class SampleEntryPoint(
     )
 
     companion object {
+        private const val NANOS_PER_SECOND = 1_000_000_000.0
+
         /** Generic history ages carried forward from the successful temporal relation experiments. */
         val DEFAULT_HISTORY_AGES: List<Duration> =
             listOf(5120L, 2560L, 1280L, 640L, 320L, 160L, 80L, 60L, 40L, 30L, 20L, 15L, 10L, 5L, 0L)

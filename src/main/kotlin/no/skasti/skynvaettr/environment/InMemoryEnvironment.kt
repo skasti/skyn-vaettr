@@ -10,7 +10,7 @@ import no.skasti.skynvaettr.signals.SignalId
 open class InMemoryEnvironment : Environment, SampleStore {
     private val items = mutableListOf<Any>()
     private val consumedCounts = mutableMapOf<KClass<*>, Int>()
-    private val history = mutableListOf<ProcessingInput>()
+    private val history = mutableListOf<RetainedInput>()
     private var nextSequence: ULong = 1uL
 
     /** Read-only view of the samples ingested by this environment. */
@@ -36,24 +36,41 @@ open class InMemoryEnvironment : Environment, SampleStore {
                 !sample.timestamp.isBefore(after) && sample.timestamp.isBefore(before) &&
                     (signals.isEmpty() || sample.signal.id in signals)
             }
+            .sortedBy { sample -> sample.timestamp }
     }
 
     override fun getNew(types: List<KClass<*>>): ProcessingInput? {
-        val values = types.distinct().associateWith { type ->
+        val distinctTypes = types.distinct()
+        val matchesByType = distinctTypes.associateWith { type ->
             val objectType = type.javaObjectType
-            val matching = items.filter { objectType.isInstance(it) }
+            items.mapIndexedNotNull { index, item ->
+                if (objectType.isInstance(item)) IndexedValue(index, item) else null
+            }
+        }
+        matchesByType.forEach { (type, matching) ->
             val consumed = consumedCounts[type] ?: 0
             require(consumed <= matching.size) {
                 "environment items cannot be removed while consumption is tracked"
             }
+        }
+
+        val newlyMatched = BooleanArray(items.size)
+        val values = matchesByType.mapValues { (type, matching) ->
+            val consumed = consumedCounts[type] ?: 0
+            matching.drop(consumed).forEach { match -> newlyMatched[match.index] = true }
             consumedCounts[type] = matching.size
-            matching.drop(consumed)
+            matching.drop(consumed).map { match -> match.value }
         }
 
         if (values.values.all(List<Any>::isEmpty)) return null
 
         val input = ProcessingInput(nextSequence++, values)
-        history += input
+        history += RetainedInput(
+            input = input,
+            items = items.indices.mapNotNull { index ->
+                if (newlyMatched[index]) items[index] else null
+            },
+        )
         return input
     }
 
@@ -73,10 +90,18 @@ open class InMemoryEnvironment : Environment, SampleStore {
         val endIndex = minOf(to - 1uL, historySize).toInt()
 
         return history.subList(startIndex, endIndex)
-            .mapNotNull { input ->
-                val values = input.values.filterKeys { it in requested }
+            .mapNotNull { retained ->
+                val values = requested.associateWith { type ->
+                    val objectType = type.javaObjectType
+                    retained.items.filter(objectType::isInstance)
+                }
                 if (values.values.all(List<Any>::isEmpty)) null
-                else input.copy(values = values)
+                else retained.input.copy(values = values)
             }
     }
+
+    private data class RetainedInput(
+        val input: ProcessingInput,
+        val items: List<Any>,
+    )
 }
