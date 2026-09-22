@@ -1,22 +1,41 @@
 package no.skasti.skynvaettr.environment
 
+import java.time.Instant
 import kotlin.reflect.KClass
+import no.skasti.skynvaettr.signals.InMemorySampleStore
+import no.skasti.skynvaettr.signals.Sample
+import no.skasti.skynvaettr.signals.SampleStore
+import no.skasti.skynvaettr.signals.SignalId
 
 /** Simple process-local environment suitable for experiments and tests. */
-open class InMemoryEnvironment : Environment {
+open class InMemoryEnvironment : Environment, SampleStore {
     private val items = mutableListOf<Any>()
     private val consumedCounts = mutableMapOf<KClass<*>, Int>()
     private val history = mutableListOf<ProcessingInput>()
+    private val mutableSampleStore = InMemorySampleStore()
     private var nextSequence: ULong = 1uL
 
+    /** Read-only view of the samples ingested by this environment. */
+    val sampleStore: SampleStore
+        get() = this
+
     fun append(items: List<*>) {
-        items.forEach { item ->
+        val nonNullItems = items.map { item ->
             requireNotNull(item) { "environment items must not be null" }
-            this.items += item
+        }
+        this.items.addAll(nonNullItems)
+        nonNullItems.filterIsInstance<Sample<*>>().takeIf { it.isNotEmpty() }?.let {
+            mutableSampleStore.append(it)
         }
     }
 
     fun append(item: Any) = append(listOf(item))
+
+    override fun get(
+        after: Instant,
+        before: Instant,
+        vararg signals: SignalId,
+    ): List<Sample<*>> = mutableSampleStore.get(after, before, *signals)
 
     override fun getNew(types: List<KClass<*>>): ProcessingInput? {
         val values = types.distinct().associateWith { type ->

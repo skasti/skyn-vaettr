@@ -25,11 +25,11 @@ import no.skasti.skynvaettr.topology.Port
  * playpen attention experiments normalized values and learned the input/key/value projections and
  * latent query from a prediction objective.
  *
- * The owning topology ingests samples before [process] is called; processing only reads history
+ * The environment owns sample ingestion before [process] is called; processing only reads history
  * and emits a representation.
  */
 class SampleEntryPoint(
-    private val sampleStore: MutableSampleStore,
+    private val sampleStore: SampleStore,
     private val signalEmbedder: Embedder<SignalId> = SignalIdentityEmbedder(),
     private val historyAges: List<Duration> = DEFAULT_HISTORY_AGES,
     override val name: String = "SampleEntryPoint",

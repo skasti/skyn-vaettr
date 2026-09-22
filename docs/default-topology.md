@@ -56,14 +56,13 @@ On each update, `DefaultTopology`:
 
 1. collects the distinct input types declared by its entrypoints;
 2. calls `Environment.getNew(types)` once with all distinct types and receives a `ProcessingInput`;
-3. appends each non-empty `Sample` batch once to its canonical `MutableSampleStore`;
-4. passes each non-empty batch to every entrypoint declaring that type.
+3. passes each non-empty batch to every entrypoint declaring that type.
 
 This means two entrypoints with the same input type receive the same batch. Empty batches do not call
-`EntryPoint.process`. `DefaultTopology` owns the canonical `sampleStore`. Its default
-`SampleEntryPoint` is constructed with that store; custom sample entrypoints must receive the same
-store when they are constructed. This keeps ingestion separate from representation processing and
-prevents a shared history from receiving duplicate batches.
+`EntryPoint.process`. The topology exposes a read-only `SampleStore` supplied by the environment;
+an explicit store may be supplied for environments that do not implement `SampleStore`. Its default
+`SampleEntryPoint` is constructed with that store. The topology does not append samples during
+dispatch, so the environment remains the owner of canonical input history.
 Entrypoint input types must be specific; `DefaultTopology` rejects `Any`. Overlapping input types
 are allowed, and the environment includes a matching value in each corresponding batch.
 Each `ProcessingInput` has a monotonic sequence number. Environments that retain delivered batches
@@ -88,8 +87,8 @@ flowchart LR
     AV --> A
 ```
 
-`DefaultTopology` stores incoming samples in its canonical `MutableSampleStore` before dispatching to
-entrypoints. `SampleEntryPoint` reads that history, selects the configured history ages for each
+The environment stores incoming samples in its canonical `SampleStore` before making them available
+to the topology. `SampleEntryPoint` reads that history, selects the configured history ages for each
 signal, and emits one `Representation` containing signal identity, scalar value, and normalized
 relative time for each selected observation.
 

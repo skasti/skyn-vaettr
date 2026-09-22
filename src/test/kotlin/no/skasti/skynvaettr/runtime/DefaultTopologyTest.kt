@@ -13,7 +13,6 @@ import no.skasti.skynvaettr.topology.Node
 import no.skasti.skynvaettr.topology.Port
 import no.skasti.skynvaettr.topology.Group
 import no.skasti.skynvaettr.topology.debugging.RecordingEntryPoint
-import no.skasti.skynvaettr.signals.InMemorySampleStore
 import no.skasti.skynvaettr.signals.Sample
 import no.skasti.skynvaettr.signals.SampleEntryPoint
 import no.skasti.skynvaettr.signals.Signal
@@ -55,17 +54,16 @@ class DefaultTopologyTest {
     @Test
     fun `ingests a shared sample batch once before dispatching entrypoints`() {
         val environment = InMemoryEnvironment()
-        val topologyStore = InMemorySampleStore()
-        val first = SampleEntryPoint(topologyStore)
-        val second = SampleEntryPoint(topologyStore)
-        val topology = DefaultTopology(environment, topologyStore, listOf(first, second))
+        val first = SampleEntryPoint(environment)
+        val second = SampleEntryPoint(environment)
+        val topology = DefaultTopology(environment, nodes = listOf(first, second))
         val sample = Sample(Signal<Double>("sensor.temperature"), 20.0, Instant.EPOCH)
 
         environment.append(sample)
         topology.update()
 
-        assertSame(topologyStore, topology.sampleStore)
-        assertEquals(listOf(sample), topologyStore.get(Instant.MIN, Instant.MAX))
+        assertSame(environment, topology.sampleStore)
+        assertEquals(listOf(sample), environment.get(Instant.MIN, Instant.MAX))
         assertNotNull(first.latestRepresentation)
         assertNotNull(second.latestRepresentation)
     }
@@ -73,14 +71,13 @@ class DefaultTopologyTest {
     @Test
     fun `default sample entrypoint uses the topology sample store`() {
         val environment = InMemoryEnvironment()
-        val topologyStore = InMemorySampleStore()
-        val topology = DefaultTopology(environment, topologyStore)
+        val topology = DefaultTopology(environment)
         val sample = Sample(Signal<Double>("sensor.temperature"), 20.0, Instant.EPOCH)
 
         environment.append(sample)
         topology.update()
 
-        assertEquals(listOf(sample), topologyStore.get(Instant.MIN, Instant.MAX))
+        assertEquals(listOf(sample), environment.get(Instant.MIN, Instant.MAX))
     }
 
     @Test

@@ -1,9 +1,8 @@
 package no.skasti.skynvaettr.runtime
 
 import no.skasti.skynvaettr.signals.InMemorySampleStore
-import no.skasti.skynvaettr.signals.MutableSampleStore
-import no.skasti.skynvaettr.signals.Sample
 import no.skasti.skynvaettr.signals.SampleEntryPoint
+import no.skasti.skynvaettr.signals.SampleStore
 
 import java.util.Collections
 import java.util.IdentityHashMap
@@ -22,19 +21,36 @@ import no.skasti.skynvaettr.topology.Group
  * [update] pulls newly available values from [environment] and processes them through the configured
  * entrypoints. All distinct input types are fetched together once per update and shared with all
  * matching entrypoints. The environment assigns the returned [ProcessingInput] its replay sequence.
- * Sample batches are appended to [sampleStore] once before dispatch.
+ * Historical samples are provided by the environment or the explicitly supplied [sampleStore].
  * A value matching multiple entrypoint types is delivered in each corresponding batch.
  */
 class DefaultTopology(
     private val environment: Environment,
-    val sampleStore: MutableSampleStore = InMemorySampleStore(),
-    nodes: List<Node> = listOf(SampleEntryPoint(sampleStore)),
+    sampleStore: SampleStore? = null,
+    nodes: List<Node> = listOf(SampleEntryPoint(resolveDefaultSampleStore(environment, sampleStore))),
     groups: List<Group> = emptyList(),
 ) : Topology {
-    override val nodes: List<Node> = nodes.toList()
+    val sampleStore: SampleStore
+    override val nodes: List<Node>
     override val groups: List<Group> = groups.toList()
 
     init {
+        val environmentSampleStore = environment as? SampleStore
+        if (sampleStore != null && environmentSampleStore != null) {
+            require(sampleStore === environmentSampleStore) {
+                "the topology sample store must be the environment sample store"
+            }
+        }
+        this.sampleStore = sampleStore ?: environmentSampleStore ?: InMemorySampleStore()
+        this.nodes = nodes.toList()
+
+        val hasSampleEntryPoint = this.nodes
+            .filterIsInstance<EntryPoint<*>>()
+            .any { entryPoint -> entryPoint.inputType == no.skasti.skynvaettr.signals.Sample::class }
+        require(!hasSampleEntryPoint || sampleStore != null || environmentSampleStore != null) {
+            "sample entrypoints require an Environment that implements SampleStore or an explicit sample store"
+        }
+
         val topologyNodes = Collections.newSetFromMap(IdentityHashMap<Node, Boolean>())
         this.nodes.forEach { node ->
             require(topologyNodes.add(node)) { "the same node cannot appear twice in a topology" }
@@ -65,13 +81,13 @@ class DefaultTopology(
 
     constructor(
         environment: Environment,
-        sampleStore: MutableSampleStore = InMemorySampleStore(),
+        sampleStore: SampleStore? = null,
         configure: TopologyBuilder.() -> Unit,
     ) : this(environment, sampleStore, TopologyBuilder().apply(configure).build())
 
     private constructor(
         environment: Environment,
-        sampleStore: MutableSampleStore = InMemorySampleStore(),
+        sampleStore: SampleStore? = null,
         definition: TopologyBuilder.Definition,
     ) : this(environment, sampleStore, definition.nodes, definition.groups)
 
@@ -80,16 +96,21 @@ class DefaultTopology(
         val inputTypes = entryPoints.map { it.inputType }.distinct()
         val input = environment.getNew(inputTypes) ?: return
         val batches = input.values
-        batches[Sample::class]?.let { rawBatch ->
-            @Suppress("UNCHECKED_CAST")
-            val samples = rawBatch as List<Sample<*>>
-            if (samples.isNotEmpty()) sampleStore.append(samples)
-        }
         entryPoints.forEach { entryPoint ->
             if (batches[entryPoint.inputType]?.isNotEmpty() == true) {
                 entryPoint.process(batches.getItems(entryPoint.inputType))
             }
         }
+    }
+
+    private companion object {
+        fun resolveDefaultSampleStore(
+            environment: Environment,
+            sampleStore: SampleStore?,
+        ): SampleStore = sampleStore ?: (environment as? SampleStore) ?: error(
+            "the default sample entrypoint requires an Environment that implements SampleStore " +
+                "or an explicit sample store",
+        )
     }
 
     private fun <T: Any> Map<KClass<*>, List<Any>>.getItems(inputType: KClass<*>): List<T> {

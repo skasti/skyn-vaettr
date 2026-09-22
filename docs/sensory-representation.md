@@ -8,7 +8,7 @@ The concrete reference network is described in [Default topology](default-topolo
 flowchart TD
     ENV[Environment] -->|New values| Vaettr 
     Vaettr --> Topology[Topology]
-    Topology --> Store[MutableSampleStore]
+    ENV --> Store[SampleStore]
     Store --> EntryPoints[EntryPoints]
     EntryPoints --> Nodes[Processing nodes]
     Nodes --> Representation[Representation]
@@ -17,8 +17,8 @@ flowchart TD
 
 `Vaettr` holds an `Environment` and a `Topology`, defaulting to `DefaultTopology`. On each `update()`,
 it delegates to `Topology.update()`. `DefaultTopology` discovers typed `EntryPoint<T>` nodes, asks the
-environment for new values once with all requested input types, stores each sample batch once in its
-canonical `MutableSampleStore`, and passes non-empty batches to matching entrypoints. Entrypoints emit
+environment for new values once with all requested input types, and passes non-empty batches to
+matching entrypoints. The environment owns the canonical sample history. Entrypoints emit
 representations through their ports; they do not return a representation from `process(...)`.
 
 `EntryPoint<T>` is the first explicit processing boundary. Its input type defines what it consumes,
@@ -77,7 +77,7 @@ remain open.
 
 `SampleEntryPoint` carries forward the generic sensory-input structure that performed best in the temporal relation-discovery experiments without promoting experiment-specific predictors or targets into core.
 
-It reads the canonical `SampleStore` populated by `DefaultTopology` and offers every signal the same
+It reads the canonical `SampleStore` populated by the `Environment` and offers every signal the same
 generic log-spaced history ages used in those experiments:
 
 ```text
@@ -138,15 +138,15 @@ reference projection nodes.
 
 This revision establishes:
 
-- `Environment` as the provider of newly available values;
+- `Environment` as the provider and owner of external input history;
 - `Vaettr` as the update orchestrator;
 - `Topology` and `DefaultTopology` as the node and entrypoint orchestration boundary;
 - `EntryPoint<T>` as the typed processing boundary;
 - `SampleEntryPoint` as the initial default sensory front-end;
 - Q/K/V projection nodes and `AttentionNode` as the initial attention pipeline;
 - synchronous ports, synapses, and Graphviz topology rendering;
-- the `DefaultTopology`-owned `MutableSampleStore` as the canonical observation history populated
-  before entrypoint processing;
+- the environment-owned `SampleStore` as the canonical observation history available before
+  entrypoint processing;
 - `Representation`/`Embedding` as generic latent numeric data;
 - replaceable embedding and attention contracts with current baseline implementations.
 

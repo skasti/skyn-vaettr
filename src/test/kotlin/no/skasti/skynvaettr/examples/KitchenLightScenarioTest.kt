@@ -7,16 +7,14 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import no.skasti.skynvaettr.Vaettr
 import no.skasti.skynvaettr.runtime.DefaultTopology
-import no.skasti.skynvaettr.signals.InMemorySampleStore
 import no.skasti.skynvaettr.signals.SampleEntryPoint
 
 class KitchenLightScenarioTest {
     @Test
     fun `light follows dimmer after configured delay`() {
         val world = KitchenLightScenario()
-        val sampleStore = InMemorySampleStore()
-        val sampleEntryPoint = SampleEntryPoint(sampleStore)
-        val topology = DefaultTopology(world, sampleStore, listOf(sampleEntryPoint))
+        val sampleEntryPoint = SampleEntryPoint(world)
+        val topology = DefaultTopology(world, nodes = listOf(sampleEntryPoint))
         val vaettr = Vaettr(world, topology)
 
         world.simulate(
@@ -38,9 +36,8 @@ class KitchenLightScenarioTest {
     @Test
     fun `days vary while nights stay off`() {
         val world = KitchenLightScenario()
-        val sampleStore = InMemorySampleStore()
-        val sampleEntryPoint = SampleEntryPoint(sampleStore)
-        val topology = DefaultTopology(world, sampleStore, listOf(sampleEntryPoint))
+        val sampleEntryPoint = SampleEntryPoint(world)
+        val topology = DefaultTopology(world, nodes = listOf(sampleEntryPoint))
         val vaettr = Vaettr(world, topology)
 
         world.simulate(
