@@ -135,7 +135,7 @@ class TopologyRendererTest {
 
     private fun topology(nodes: List<Node>, groups: List<Group>): Topology = object : Topology {
         override val nodes = nodes
-        override val groups = groups
+        override val groups = groups.associateBy { it.name }
         override fun update() = Unit
     }
 

@@ -31,7 +31,7 @@ class DefaultTopologyTest {
         }
 
         assertEquals(listOf(entryPoint), topology.nodes)
-        assertEquals(listOf(group), topology.groups)
+        assertEquals(listOf(group), topology.groups.values.toList())
 
         environment.append(7)
         topology.update()
@@ -49,7 +49,7 @@ class DefaultTopologyTest {
         }
 
         assertEquals(listOf(entryPoint), topology.nodes)
-        assertEquals(emptyList(), topology.groups)
+        assertEquals(emptyList(), topology.groups.values.toList())
     }
 
     @Test

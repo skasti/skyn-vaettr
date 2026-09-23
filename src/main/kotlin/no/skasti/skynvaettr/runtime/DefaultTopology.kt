@@ -32,29 +32,20 @@ class DefaultTopology(
 ) : Topology {
     val sampleStore: SampleStore
     override val nodes: List<Node>
-    override val groups: List<Group> = groups.toList()
+    override val groups: Map<String, Group> = groups.associateBy { it.name }
 
     init {
         val environmentSampleStore = environment as? SampleStore
-        if (sampleStore != null && environmentSampleStore != null) {
-            require(sampleStore === environmentSampleStore) {
-                "the topology sample store must be the environment sample store"
-            }
-        }
-        this.sampleStore = sampleStore ?: environmentSampleStore ?: InMemorySampleStore()
+        this.sampleStore = sampleStore ?: environmentSampleStore ?: error(
+            "the default sample entrypoint requires an Environment that implements SampleStore " +
+                "or an explicit sample store",
+        )
         this.nodes = nodes.toList()
 
         this.nodes.filterIsInstance<SampleEntryPoint>().forEach { entryPoint ->
             require(entryPoint.sampleStore === this.sampleStore) {
-                "sample entrypoints must use the topology sample store"
+                "SampleEntrypoint must use the topology sample store"
             }
-        }
-
-        val hasSampleEntryPoint = this.nodes
-            .filterIsInstance<EntryPoint<*>>()
-            .any { entryPoint -> entryPoint.inputType == no.skasti.skynvaettr.signals.Sample::class }
-        require(!hasSampleEntryPoint || sampleStore != null || environmentSampleStore != null) {
-            "sample entrypoints require an Environment that implements SampleStore or an explicit sample store"
         }
 
         val topologyNodes = Collections.newSetFromMap(IdentityHashMap<Node, Boolean>())
@@ -66,17 +57,14 @@ class DefaultTopology(
                 "entrypoint '${entryPoint.name}' must declare a specific input type, not Any"
             }
         }
-        val groupNames = mutableSetOf<String>()
+
         val groupedNodes = Collections.newSetFromMap(IdentityHashMap<Node, Boolean>())
-        this.groups.forEach { group ->
-            require(group.name.isNotBlank()) { "topology group name must not be blank" }
-            require(groupNames.add(group.name)) {
-                "topology group name '${group.name}' is already registered"
-            }
-            require(group.nodes.isNotEmpty()) { "topology group '${group.name}' must contain nodes" }
+        this.groups.forEach { (groupName, group) ->
+            require(groupName.isNotBlank()) { "topology group name must not be blank" }
+            require(group.nodes.isNotEmpty()) { "topology group '${groupName}' must contain nodes" }
             group.nodes.forEach { node ->
                 require(node in topologyNodes) {
-                    "topology group '${group.name}' contains a node outside the topology"
+                    "topology group '${groupName}' contains a node outside the topology"
                 }
                 require(groupedNodes.add(node)) {
                     "a node cannot belong to more than one topology group"

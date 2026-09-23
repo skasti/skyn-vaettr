@@ -25,15 +25,15 @@ class TopologyRenderer(
             }
         }
         val groupedNodes = IdentityHashMap<Node, String>()
-        topology.groups.forEach { group ->
-            require(group.name.isNotBlank()) { "Topology group name must not be blank" }
+        topology.groups.forEach { (groupName, group) ->
+            require(groupName.isNotBlank()) { "Topology group name must not be blank" }
             group.nodes.forEach { node ->
                 require(ids.containsKey(node)) {
-                    "Topology group '${group.name}' contains a node outside the topology"
+                    "Topology group '${groupName}' contains a node outside the topology"
                 }
-                val previous = groupedNodes.put(node, group.name)
+                val previous = groupedNodes.put(node, groupName)
                 require(previous == null) {
-                    "Node belongs to both topology groups '$previous' and '${group.name}'"
+                    "Node belongs to both topology groups '$previous' and '$groupName'"
                 }
             }
         }
@@ -57,10 +57,10 @@ class TopologyRenderer(
             fun label(node: Node): String = node.name
                 .replace("\\", "\\\\").replace("\"", "\\\"")
                 .replace("\r", "\\r").replace("\n", "\\n")
-
-            topology.groups.forEachIndexed { groupIndex, group ->
-                appendLine("  subgraph cluster_$groupIndex {")
-                appendLine("    label=\"${escape(group.name)}\";")
+            var groupIndex = 0
+            topology.groups.forEach { (groupName, group) ->
+                appendLine("  subgraph cluster_${groupIndex++} {")
+                appendLine("    label=\"${escape(groupName)}\";")
                 appendAttributeAssignments("    ", style.groupAttributes)
                 group.nodes.forEach { node ->
                     appendLine("    n${ids.getValue(node)} [label=\"${label(node)}\"];")

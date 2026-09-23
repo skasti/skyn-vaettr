@@ -5,8 +5,8 @@ interface Topology {
     val nodes: List<Node>
 
     /** Named systems used by topology-aware tools such as the Graphviz renderer. */
-    val groups: List<Group>
-        get() = emptyList()
+    val groups: Map<String, Group>
+        get() = emptyMap()
 
     /** External inputs derived from the nodes in this topology. */
     val entryPoints: List<EntryPoint<*>>
