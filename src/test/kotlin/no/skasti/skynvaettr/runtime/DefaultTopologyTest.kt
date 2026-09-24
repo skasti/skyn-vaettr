@@ -21,35 +21,20 @@ import org.junit.jupiter.api.assertDoesNotThrow
 
 class DefaultTopologyTest {
     @Test
-    fun `builder flattens group nodes and keeps the group boundary`() {
+    fun `rejects a group map whose key does not match the group name`() {
         val environment = InMemoryEnvironment()
-        val entryPoint = RecordingEntryPoint("RecordingEntryPoint", Int::class)
-        val group = TestGroup("signals", entryPoint)
-
-        val topology = DefaultTopology(environment) {
-            add(group)
-        }
-
-        assertEquals(listOf(entryPoint), topology.nodes)
-        assertEquals(listOf(group), topology.groups.values.toList())
-
-        environment.append(7)
-        topology.update()
-
-        assertEquals(listOf(listOf(7)), entryPoint.received)
-    }
-
-    @Test
-    fun `builder adds standalone nodes through the same add function`() {
-        val environment = InMemoryEnvironment()
-        val entryPoint = RecordingEntryPoint("RecordingEntryPoint", Int::class)
-
-        val topology = DefaultTopology(environment) {
+        val entryPoint = RecordingEntryPoint("EntryPoint", Int::class)
+        val group = Group.build("signals") {
             add(entryPoint)
         }
 
-        assertEquals(listOf(entryPoint), topology.nodes)
-        assertEquals(emptyList(), topology.groups.values.toList())
+        assertFailsWith<IllegalArgumentException> {
+            DefaultTopology(
+                environment,
+                nodes = listOf(entryPoint),
+                groups = mapOf("other" to group),
+            )
+        }
     }
 
     @Test
@@ -238,11 +223,4 @@ class DefaultTopologyTest {
     private interface RightMarker
 
     private class BothValue : LeftMarker, RightMarker
-
-    private class TestGroup(
-        override val name: String,
-        node: Node,
-    ) : Group {
-        override val nodes: List<Node> = listOf(node)
-    }
 }

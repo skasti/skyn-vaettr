@@ -6,16 +6,16 @@ import java.util.IdentityHashMap
 /** DSL builder for composing nodes into named systems in a [Topology]. */
 class TopologyBuilder internal constructor() {
     private val components = mutableListOf<List<Node>>()
-    private val groups = mutableListOf<Group>()
+    private val groups = linkedMapOf<String, Group>()
 
     /** Adds a named group and returns the same instance so its exposed ports can be connected. */
     fun <T : Group> add(group: T): T {
         require(group.name.isNotBlank()) { "topology group name must not be blank" }
         require(group.nodes.isNotEmpty()) { "topology group '${group.name}' must contain nodes" }
-        require(groups.none { it.name == group.name }) {
+        require(group.name !in groups) {
             "topology group name '${group.name}' is already registered"
         }
-        groups += group
+        groups[group.name] = group
         components += group.nodes
         return group
     }
@@ -32,11 +32,11 @@ class TopologyBuilder internal constructor() {
         nodes.forEach { node ->
             require(identities.add(node)) { "the same node cannot appear twice in a topology" }
         }
-        return Definition(nodes = nodes, groups = groups.toList())
+        return Definition(nodes = nodes, groups = groups.toMap())
     }
 
     internal data class Definition(
         val nodes: List<Node>,
-        val groups: List<Group>,
+        val groups: Map<String, Group>,
     )
 }

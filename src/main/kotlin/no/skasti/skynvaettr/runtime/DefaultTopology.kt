@@ -14,6 +14,7 @@ import no.skasti.skynvaettr.topology.Node
 import no.skasti.skynvaettr.topology.Topology
 import no.skasti.skynvaettr.topology.TopologyBuilder
 import no.skasti.skynvaettr.topology.Group
+import no.skasti.skynvaettr.topology.validate
 
 /**
  * Initial topology that dispatches new environment values to typed entrypoints.
@@ -28,11 +29,11 @@ class DefaultTopology(
     private val environment: Environment,
     sampleStore: SampleStore? = null,
     nodes: List<Node> = listOf(SampleEntryPoint(resolveDefaultSampleStore(environment, sampleStore))),
-    groups: List<Group> = emptyList(),
+    groups: Map<String, Group> = emptyMap(),
 ) : Topology {
     val sampleStore: SampleStore
     override val nodes: List<Node>
-    override val groups: Map<String, Group> = groups.associateBy { it.name }
+    override val groups: Map<String, Group> = groups.toMap()
 
     init {
         val environmentSampleStore = environment as? SampleStore
@@ -41,6 +42,7 @@ class DefaultTopology(
                 "or an explicit sample store",
         )
         this.nodes = nodes.toList()
+        this.groups.validate()
 
         this.nodes.filterIsInstance<SampleEntryPoint>().forEach { entryPoint ->
             require(entryPoint.sampleStore === this.sampleStore) {
@@ -60,8 +62,6 @@ class DefaultTopology(
 
         val groupedNodes = Collections.newSetFromMap(IdentityHashMap<Node, Boolean>())
         this.groups.forEach { (groupName, group) ->
-            require(groupName.isNotBlank()) { "topology group name must not be blank" }
-            require(group.nodes.isNotEmpty()) { "topology group '${groupName}' must contain nodes" }
             group.nodes.forEach { node ->
                 require(node in topologyNodes) {
                     "topology group '${groupName}' contains a node outside the topology"
