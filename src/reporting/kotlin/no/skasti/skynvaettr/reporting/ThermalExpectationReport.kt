@@ -5,9 +5,16 @@ import java.nio.file.Path
 import java.time.Duration
 import java.time.Instant
 import no.skasti.skynvaettr.Vaettr
+import no.skasti.skynvaettr.attention.AttentionNode
+import no.skasti.skynvaettr.attention.KeyNode
+import no.skasti.skynvaettr.attention.QueryNode
+import no.skasti.skynvaettr.attention.ScaledDotProductAttention
+import no.skasti.skynvaettr.attention.ValueNode
+import no.skasti.skynvaettr.runtime.DefaultTopology
 import no.skasti.skynvaettr.examples.ThermalExpectationScenario
 import no.skasti.skynvaettr.expectations.Expectation
 import no.skasti.skynvaettr.expectations.ExpectationResult
+import no.skasti.skynvaettr.signals.SampleEntryPoint
 import no.skasti.skynvaettr.signals.Sample
 
 /** Renders the inspectable report for the minimal thermal expectation example. */
@@ -17,20 +24,34 @@ object ThermalExpectationReport {
         val reportDir = Path.of(args.firstOrNull() ?: "build/reports/examples/thermal-expectation")
         Files.createDirectories(reportDir)
 
-        val vaettr = Vaettr()
         val world = ThermalExpectationScenario()
+        val sampleEntryPoint = SampleEntryPoint(world)
+        val queryNode = QueryNode()
+        val keyNode = KeyNode()
+        val valueNode = ValueNode()
+        val attentionNode = AttentionNode(ScaledDotProductAttention())
+        sampleEntryPoint.output.connectTo(queryNode.input)
+        sampleEntryPoint.output.connectTo(keyNode.input)
+        sampleEntryPoint.output.connectTo(valueNode.input)
+        queryNode.output.connectTo(attentionNode.q)
+        keyNode.output.connectTo(attentionNode.k)
+        valueNode.output.connectTo(attentionNode.v)
+        val topology = DefaultTopology(
+            world,
+            nodes = listOf(sampleEntryPoint, queryNode, keyNode, valueNode, attentionNode),
+        )
+        val vaettr = Vaettr(world, topology)
         val duration = Duration.ofDays(1)
         val reportStart = Instant.EPOCH
         val reportEnd = reportStart.plus(duration)
 
         world.simulate(
+            vaettr = vaettr,
             duration = duration,
             step = Duration.ofMinutes(5),
-        ) { samples ->
-            vaettr.sense(samples)
-        }
+        )
 
-        val samples = vaettr.sampleStore.get(reportStart, reportEnd.plusNanos(1))
+        val samples = topology.sampleStore.get(reportStart, reportEnd.plusNanos(1))
         val renderer = SampleChartRenderer()
         val worldSeries = listOf(
             SampleChartRenderer.Series(world.outdoorTemperature.id, "Outdoor temperature"),
@@ -58,6 +79,8 @@ object ThermalExpectationReport {
             ),
             output = reportDir.resolve("expectations.png"),
         )
+
+        TopologyRenderer().render(topology, reportDir)
 
         Files.writeString(
             reportDir.resolve("summary.md"),

@@ -38,13 +38,11 @@ Model identifiers, labels, rewards, selection scores, or other experiment-specif
 
 Conceptually:
 
-```text
-timestamp       indoor.temp   outdoor.temp   hvac.effect
---------------------------------------------------------
-10:00:00        21.5          9.0            0.0
-10:01:00        21.4          8.9            0.2
-10:02:00        21.4          8.8            0.2
-```
+| timestamp | indoor.temp | outdoor.temp | hvac.effect |
+| --- | ---: | ---: | ---: |
+| 10:00:00 | 21.5 | 9.0 | 0.0 |
+| 10:01:00 | 21.4 | 8.9 | 0.2 |
+| 10:02:00 | 21.4 | 8.8 | 0.2 |
 
 In code, the same data is represented as:
 
@@ -98,7 +96,7 @@ This is a transport and batching representation. It is not itself the model inpu
 
 ## Alignment and asynchronous signals
 
-Real signal sources are not necessarily sampled at the same timestamps.
+Real environment inputs are not necessarily sampled at the same timestamps.
 
 For example:
 
@@ -109,7 +107,22 @@ indoor.temperature   10:01:00   21.4
 outdoor.temperature  10:01:17    8.9
 ```
 
-`EpisodeData` does **not** decide how these asynchronous samples become aligned rows.
+One option is to preserve every distinct timestamp as its own row. A signal that has no sample
+at a row timestamp can then use `null`, producing a rectangular grid with sparse values:
+
+| timestamp | indoor.temperature | outdoor.temperature |
+| --- | ---: | ---: |
+| 10:00:00 | 21.5 | null |
+| 10:00:13 | null | 9.0 |
+| 10:01:00 | 21.4 | null |
+| 10:01:17 | null | 8.9 |
+
+Timestamp normalization, when needed, belongs at [signal
+ingress](signals.md#signal-ingress-and-timestamp-normalization), before samples are persisted.
+
+`EpisodeData` consumes timestamps as stored and does **not** normalize them. Its alignment concern
+is representing the available timestamps as rows, including `null` cells where a signal has no
+value at a given timestamp.
 
 A separate materialization or preprocessing step must decide whether to use strategies such as:
 
@@ -118,11 +131,12 @@ A separate materialization or preprocessing step must decide whether to use stra
 - latest-known value;
 - interpolation;
 - aggregation over a window;
-- missing values.
+- explicit missing values such as `null`.
 
 That policy can materially change what a model learns, so it must remain explicit rather than being hidden inside the episode container.
 
-By the time an `EpisodeData` instance is constructed, the rows are assumed to already be aligned.
+By the time an `EpisodeData` instance is constructed, the rows are assumed to already be aligned,
+using the timestamps produced by signal ingress.
 
 ## Materializing from SampleStore
 
@@ -134,7 +148,9 @@ val data: EpisodeData = sampleStore.get(definition)
 
 This keeps `SampleStore` itself generic and unaware of episodes while letting the episode layer adapt stored samples into `EpisodeData`.
 
-The default materializer is intentionally strict. For every timestamp returned by the store, it requires exactly one sample for each signal in the episode definition. It does not:
+The default materializer is intentionally strict. For every timestamp returned by the store, it
+requires exactly one sample for each signal in the episode definition. `EpisodeData` itself can
+represent `null` cells, but this default materializer does not create them. It does not:
 
 - interpolate missing signals;
 - carry forward previous values;
@@ -179,26 +195,18 @@ Skynvættr therefore does not currently introduce `State` as a core signal abstr
 
 Model-specific transformations belong later in the pipeline:
 
-```text
-SampleStore
-    |
-    v
-EpisodeDefinition
-    |
-    v
-materialize / align
-    |
-    v
-EpisodeData
-    |
-    v
-preprocess / encode / window
-    |
-    v
-model-specific tensors
-    |
-    v
-Model
+```mermaid
+flowchart TB
+    STORE[SampleStore]
+    DEFINITION[EpisodeDefinition]
+    DATA[Materialize / align into EpisodeData]
+    TENSORS[Preprocess / encode / window into model-specific tensors]
+    MODEL[Model]
+
+    STORE --> DEFINITION
+    DEFINITION --> DATA
+    DATA --> TENSORS
+    TENSORS --> MODEL
 ```
 
 Examples of transformations that should generally happen after episode materialization include:
@@ -227,20 +235,14 @@ A trainer can then:
 
 Conceptually:
 
-```text
-EpisodeStore ----> EpisodeDefinition
-                         |
-                         v
-SampleStore ------> materialization
-                         |
-                         v
-                    EpisodeData
-                         |
-                         v
-                 preprocessing
-                         |
-                         v
-                       Model
+```mermaid
+flowchart TB
+    EPISODE_STORE[EpisodeStore] --> DEFINITION[EpisodeDefinition]
+    SAMPLE_STORE[SampleStore] --> MATERIALIZATION[Materialization]
+    DEFINITION --> MATERIALIZATION
+    MATERIALIZATION --> DATA[EpisodeData]
+    DATA --> PREPROCESSING[Preprocessing]
+    PREPROCESSING --> MODEL[Model]
 ```
 
 This avoids duplicating signal history per model and allows several models or trainers to reinterpret the same experience differently.

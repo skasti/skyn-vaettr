@@ -4,8 +4,15 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Duration
 import java.time.Instant
+import no.skasti.skynvaettr.Vaettr
+import no.skasti.skynvaettr.attention.AttentionNode
+import no.skasti.skynvaettr.attention.KeyNode
+import no.skasti.skynvaettr.attention.QueryNode
+import no.skasti.skynvaettr.attention.ScaledDotProductAttention
+import no.skasti.skynvaettr.attention.ValueNode
+import no.skasti.skynvaettr.runtime.DefaultTopology
 import no.skasti.skynvaettr.examples.KitchenLightScenario
-import no.skasti.skynvaettr.signals.Sample
+import no.skasti.skynvaettr.signals.SampleEntryPoint
 
 /** Renders the kitchen world itself, without involving models, predictions or expectations. */
 object KitchenLightScenarioReport {
@@ -15,13 +22,29 @@ object KitchenLightScenarioReport {
         Files.createDirectories(reportDir)
 
         val world = KitchenLightScenario()
+        val sampleEntryPoint = SampleEntryPoint(world)
+        val queryNode = QueryNode()
+        val keyNode = KeyNode()
+        val valueNode = ValueNode()
+        val attentionNode = AttentionNode(ScaledDotProductAttention())
+        sampleEntryPoint.output.connectTo(queryNode.input)
+        sampleEntryPoint.output.connectTo(keyNode.input)
+        sampleEntryPoint.output.connectTo(valueNode.input)
+        queryNode.output.connectTo(attentionNode.q)
+        keyNode.output.connectTo(attentionNode.k)
+        valueNode.output.connectTo(attentionNode.v)
+        val topology = DefaultTopology(
+            world,
+            nodes = listOf(sampleEntryPoint, queryNode, keyNode, valueNode, attentionNode),
+        )
+        val vaettr = Vaettr(world, topology)
         val duration = Duration.ofDays(10)
-        val samples = mutableListOf<Sample<*>>()
         world.simulate(
+            vaettr = vaettr,
             duration = duration,
             step = Duration.ofMinutes(5),
-            onSense = samples::addAll,
         )
+        val samples = topology.sampleStore.get(Instant.EPOCH, Instant.EPOCH.plusNanos(duration.toNanos() + 1))
 
         val finalDayStart = Instant.EPOCH.plus(Duration.ofDays(9))
         val finalDayEnd = Instant.EPOCH.plus(duration)
@@ -37,6 +60,8 @@ object KitchenLightScenarioReport {
             ),
             output = reportDir.resolve("day.png"),
         )
+
+        TopologyRenderer().render(topology, reportDir)
 
         Files.writeString(
             reportDir.resolve("summary.md"),
