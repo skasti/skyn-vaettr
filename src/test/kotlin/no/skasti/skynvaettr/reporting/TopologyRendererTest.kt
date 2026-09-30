@@ -312,6 +312,7 @@ class TopologyRendererTest {
         "query-snapshot" -> "q-snapshot"
         "key-snapshot" -> "k-snapshot"
         "value-snapshot" -> "v-snapshot"
+        "decoder-snapshot" -> "decoder-snapshot"
         "query-update" -> "q-update"
         "key-update" -> "k-update"
         "value-update" -> "v-update"
