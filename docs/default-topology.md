@@ -156,6 +156,12 @@ val style = TopologyGraphStyle(
 TopologyRenderer(style = style).render(topology, reportDir)
 ```
 
+For branched or cyclic topologies, `TopologyGraphLayout` can keep parallel nodes together, pin output
+nodes to the final rank, and mark feedback edges as non-constraining for layout. These hints change
+only node placement; the directed synapses and their labels remain in the graph. The renderer test
+contains a grouped example based on the Q/K/V, Attention, Decoder, and Trainer topology from
+vaettr-playpen PR #17.
+
 ## Deliberate limits
 
 `DefaultTopology` currently provides synchronous delivery, single-slot buffering, and direct

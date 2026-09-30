@@ -13,6 +13,7 @@ class TopologyRenderer(
     private val executable: String = System.getenv("GRAPHVIZ_DOT") ?: "dot",
     private val style: TopologyGraphStyle = TopologyGraphStyle(),
     private val showPortLabels: Boolean = true,
+    private val layout: TopologyGraphLayout = TopologyGraphLayout(),
 ) {
     fun toDot(topology: Topology): String {
         val nodes = topology.nodes.toList()
@@ -36,6 +37,20 @@ class TopologyRenderer(
                 require(previous == null) {
                     "Node belongs to both topology groups '$previous' and '$groupName'"
                 }
+            }
+        }
+        val rankedNodes = java.util.Collections.newSetFromMap(IdentityHashMap<Node, Boolean>())
+        layout.sameRank.flatten().forEach { node ->
+            require(ids.containsKey(node)) { "Topology layout references a node outside the topology" }
+            require(rankedNodes.add(node)) { "A node can only appear in one same-rank group" }
+        }
+        layout.sink.forEach { node ->
+            require(ids.containsKey(node)) { "Topology layout references a node outside the topology" }
+            require(rankedNodes.add(node)) { "A node can only have one explicit rank" }
+        }
+        layout.unconstrainedEdges.forEach { (source, target) ->
+            require(ids.containsKey(source) && ids.containsKey(target)) {
+                "Topology layout edge references a node outside the topology"
             }
         }
         val edges = linkedSetOf<PortConnection>()
@@ -77,11 +92,31 @@ class TopologyRenderer(
                 val index = ids.getValue(node)
                 appendLine("  n$index [label=\"${label(node)}\"];")
             }
+            layout.sameRank.forEachIndexed { index, rankNodes ->
+                if (rankNodes.isNotEmpty()) {
+                    appendLine("  subgraph rank_same_$index {")
+                    appendLine("    rank=same;")
+                    rankNodes.forEach { appendLine("    n${ids.getValue(it)};") }
+                    appendLine("  }")
+                }
+            }
+            if (layout.sink.isNotEmpty()) {
+                appendLine("  subgraph rank_sink {")
+                appendLine("    rank=sink;")
+                layout.sink.forEach { appendLine("    n${ids.getValue(it)};") }
+                appendLine("  }")
+            }
             edges.forEach { edge ->
                 append("  n${edge.sourceNode} -> n${edge.targetNode}")
-                if (showPortLabels) {
-                    append(" [xlabel=\"${escape(edge.sourcePort.name)}\"]")
+                val attributes = buildList {
+                    if (showPortLabels) add("xlabel=\"${escape(edge.sourcePort.name)}\"")
+                    val source = nodes[edge.sourceNode]
+                    val target = nodes[edge.targetNode]
+                    if (layout.unconstrainedEdges.any { (from, to) -> from === source && to === target }) {
+                        add("constraint=false")
+                    }
                 }
+                if (attributes.isNotEmpty()) append(" [${attributes.joinToString(", ")}]")
                 appendLine(";")
             }
             appendLine("}")

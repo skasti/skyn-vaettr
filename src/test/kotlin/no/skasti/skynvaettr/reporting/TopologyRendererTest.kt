@@ -106,7 +106,24 @@ class TopologyRendererTest {
     @Test
     fun `renders a PR 17 shaped grouped topology with port labels`() {
         val topology = selfSupervisedTrainingTopology()
-        val dot = TopologyRenderer().toDot(topology)
+        val query = topology.nodes.single { it.name == "Query" }
+        val key = topology.nodes.single { it.name == "Key" }
+        val value = topology.nodes.single { it.name == "Value" }
+        val decoder = topology.nodes.single { it.name == "SignalPredictionDecoder" }
+        val trainer = topology.nodes.single { it.name == "SelfSupervisedSignalTrainer" }
+        val renderer = TopologyRenderer(
+            layout = TopologyGraphLayout(
+                sameRank = listOf(listOf(query, key, value)),
+                sink = listOf(decoder, trainer),
+                unconstrainedEdges = listOf(
+                    trainer to query,
+                    trainer to key,
+                    trainer to value,
+                    trainer to topology.nodes.single { it.name == "DecoderProjection" },
+                ),
+            ),
+        )
+        val dot = renderer.toDot(topology)
         val directory = Path.of("build", "test-artifacts", "TopologyRendererTest", "self-supervised-training")
 
         assertEquals(9, topology.nodes.size)
@@ -121,12 +138,15 @@ class TopologyRendererTest {
         assertTrue("n2 -> n8 [xlabel=\"q-parameter-snapshot\"]" in dot)
         assertTrue("n8 -> n2 [xlabel=\"q-snapshot-request\"]" in dot)
         assertTrue("n8 -> n2 [xlabel=\"q-update\"]" in dot)
+        assertTrue("subgraph rank_same_0" in dot)
+        assertTrue("subgraph rank_sink" in dot)
+        assertTrue("n8 -> n2 [xlabel=\"q-update\", constraint=false]" in dot)
 
         Files.createDirectories(directory)
         Files.writeString(directory.resolve("topology.dot"), dot)
         val executable = System.getenv("GRAPHVIZ_DOT") ?: "dot"
         assumeTrue(graphvizAvailable(executable), "Graphviz is unavailable; topology.dot was still written")
-        TopologyRenderer().render(topology, directory)
+        renderer.render(topology, directory)
         assertTrue(Files.isRegularFile(directory.resolve("topology.png")))
     }
 
