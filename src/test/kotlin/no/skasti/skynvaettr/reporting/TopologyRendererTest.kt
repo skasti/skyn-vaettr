@@ -123,6 +123,7 @@ class TopologyRendererTest {
             ),
         )
         val dot = renderer.toDot(topology)
+        val mermaid = TopologyMermaidRenderer().toMermaid(topology)
         val directory = Path.of("build", "test-artifacts", "TopologyRendererTest", "self-supervised-training")
 
         assertEquals(9, topology.nodes.size)
@@ -136,8 +137,16 @@ class TopologyRendererTest {
         assertTrue("subgraph rank_same_0" in dot)
         assertTrue("subgraph rank_sink" in dot)
 
+        assertTrue(mermaid.startsWith("flowchart LR"))
+        assertTrue("subgraph group0[\"Sensory Processing\"]" in mermaid)
+        assertTrue("subgraph group1[\"Prediction\"]" in mermaid)
+        assertTrue("subgraph group2[\"Learning\"]" in mermaid)
+        assertTrue("n8 -->|q-snapshot-request → q-parameter-snapshot-request<br/>q-update → q-parameter-update| n2" in mermaid)
+        assertTrue("n2 -->|q-forward-pass → q-pass<br/>q-parameter-snapshot → q-snapshot| n8" in mermaid)
+
         Files.createDirectories(directory)
         Files.writeString(directory.resolve("topology.dot"), dot)
+        Files.writeString(directory.resolve("topology.mmd"), mermaid)
         val executable = System.getenv("GRAPHVIZ_DOT") ?: "dot"
         assumeTrue(graphvizAvailable(executable), "Graphviz is unavailable; topology.dot was still written")
         renderer.render(topology, directory)
