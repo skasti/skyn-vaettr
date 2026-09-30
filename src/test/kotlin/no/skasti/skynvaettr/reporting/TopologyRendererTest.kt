@@ -229,41 +229,41 @@ class TopologyRendererTest {
 
         val sensory = Group.build("Sensory Processing") {
             add(entry); add(stream)
-            entry.port("new-samples").connectTo(stream.port("new-samples"))
-            entry.port("sample-position-metadata").connectTo(stream.port("metadata"))
-            entry.port("samples").connectTo(stream.port("representation"))
-            expose("prefix", stream.port("prefix"))
-            expose("frame", stream.port("frame"))
-            expose("observations", stream.port("observations"))
+            entry.diagramPort("new-samples").connectTo(stream.diagramPort("new-samples"))
+            entry.diagramPort("sample-position-metadata").connectTo(stream.diagramPort("metadata"))
+            entry.diagramPort("samples").connectTo(stream.diagramPort("representation"))
+            expose("prefix", stream.diagramPort("prefix"))
+            expose("frame", stream.diagramPort("frame"))
+            expose("observations", stream.diagramPort("observations"))
         }
         val prediction = Group.build("Prediction") {
             add(query); add(key); add(value); add(attention); add(decoderProjection); add(decoder)
-            query.port("q").connectTo(attention.port("q"))
-            key.port("k").connectTo(attention.port("k"))
-            value.port("v").connectTo(attention.port("v"))
-            attention.port("attention").connectTo(decoderProjection.port("decoder-input"))
-            attention.port("attention-forward-pass").connectTo(decoder.port("attention-pass"))
-            decoderProjection.port("decoder-forward-pass").connectTo(decoder.port("decoder-pass"))
-            expose("query-input", query.port("q-input"))
-            expose("key-input", key.port("k-input"))
-            expose("value-input", value.port("v-input"))
-            expose("frame", decoder.port("frame"))
-            expose("predictions", decoder.port("predictions"))
-            expose("query-forward", query.port("q-forward-pass"))
-            expose("key-forward", key.port("k-forward-pass"))
-            expose("value-forward", value.port("v-forward-pass"))
-            expose("query-snapshot-request", query.port("q-parameter-snapshot-request"))
-            expose("key-snapshot-request", key.port("k-parameter-snapshot-request"))
-            expose("value-snapshot-request", value.port("v-parameter-snapshot-request"))
-            expose("decoder-snapshot-request", decoderProjection.port("decoder-parameter-snapshot-request"))
-            expose("query-snapshot", query.port("q-parameter-snapshot"))
-            expose("key-snapshot", key.port("k-parameter-snapshot"))
-            expose("value-snapshot", value.port("v-parameter-snapshot"))
-            expose("decoder-snapshot", decoderProjection.port("decoder-parameter-snapshot"))
-            expose("query-update", query.port("q-parameter-update"))
-            expose("key-update", key.port("k-parameter-update"))
-            expose("value-update", value.port("v-parameter-update"))
-            expose("decoder-update", decoderProjection.port("decoder-parameter-update"))
+            query.diagramPort("q").connectTo(attention.diagramPort("q"))
+            key.diagramPort("k").connectTo(attention.diagramPort("k"))
+            value.diagramPort("v").connectTo(attention.diagramPort("v"))
+            attention.diagramPort("attention").connectTo(decoderProjection.diagramPort("decoder-input"))
+            attention.diagramPort("attention-forward-pass").connectTo(decoder.diagramPort("attention-pass"))
+            decoderProjection.diagramPort("decoder-forward-pass").connectTo(decoder.diagramPort("decoder-pass"))
+            expose("query-input", query.diagramPort("q-input"))
+            expose("key-input", key.diagramPort("k-input"))
+            expose("value-input", value.diagramPort("v-input"))
+            expose("frame", decoder.diagramPort("frame"))
+            expose("predictions", decoder.diagramPort("predictions"))
+            expose("query-forward", query.diagramPort("q-forward-pass"))
+            expose("key-forward", key.diagramPort("k-forward-pass"))
+            expose("value-forward", value.diagramPort("v-forward-pass"))
+            expose("query-snapshot-request", query.diagramPort("q-parameter-snapshot-request"))
+            expose("key-snapshot-request", key.diagramPort("k-parameter-snapshot-request"))
+            expose("value-snapshot-request", value.diagramPort("v-parameter-snapshot-request"))
+            expose("decoder-snapshot-request", decoderProjection.diagramPort("decoder-parameter-snapshot-request"))
+            expose("query-snapshot", query.diagramPort("q-parameter-snapshot"))
+            expose("key-snapshot", key.diagramPort("k-parameter-snapshot"))
+            expose("value-snapshot", value.diagramPort("v-parameter-snapshot"))
+            expose("decoder-snapshot", decoderProjection.diagramPort("decoder-parameter-snapshot"))
+            expose("query-update", query.diagramPort("q-parameter-update"))
+            expose("key-update", key.diagramPort("k-parameter-update"))
+            expose("value-update", value.diagramPort("v-parameter-update"))
+            expose("decoder-update", decoderProjection.diagramPort("decoder-parameter-update"))
         }
         val learning = Group.build("Learning") {
             add(trainer)
@@ -271,7 +271,7 @@ class TopologyRendererTest {
                 "query-snapshot-request", "key-snapshot-request", "value-snapshot-request", "decoder-snapshot-request",
                 "query-snapshot", "key-snapshot", "value-snapshot", "decoder-snapshot",
                 "query-update", "key-update", "value-update", "decoder-update").forEach { name ->
-                expose(name, trainer.port(name.toPortName()))
+                expose(name, trainer.diagramPort(name.toPortName()))
             }
         }
 
@@ -327,7 +327,7 @@ class TopologyRendererTest {
     ) : Node {
         private val namedPorts = portNames.associateWith { SingleSlotPort<Any>(it) }
         override val ports = namedPorts.values.toList()
-        fun port(name: String): SingleSlotPort<Any> = checkNotNull(namedPorts[name]) {
+        fun diagramPort(name: String): SingleSlotPort<Any> = checkNotNull(namedPorts[name]) {
             "Unknown diagram port '$name' on $this"
         }
     }
