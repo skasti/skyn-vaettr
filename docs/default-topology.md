@@ -120,7 +120,7 @@ The reporting source set uses `TopologyRenderer` to inspect `Topology.nodes`, ea
 `ports`, and each port's `synapses`. It writes `topology.dot` and invokes Graphviz to produce
 `topology.png`. `TopologyMermaidRenderer` exports the same topology as a Mermaid flowchart for
 Markdown reports and GitHub comments; groups become subgraphs and each edge label lists its distinct
-source/target port pairs.
+individual source/target port pairs, so each connection remains a short, separate arrow.
 Ports are not drawn as separate nodes; each directed arrow connects the nodes that own the source and
 target ports. Connections between the same pair of nodes are drawn as one arrow, labelled with the
 distinct source port names joined by `/`. This keeps feedback paths visible while showing the
