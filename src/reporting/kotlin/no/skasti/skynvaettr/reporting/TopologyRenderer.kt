@@ -12,6 +12,8 @@ import no.skasti.skynvaettr.topology.Topology
 class TopologyRenderer(
     private val executable: String = System.getenv("GRAPHVIZ_DOT") ?: "dot",
     private val style: TopologyGraphStyle = TopologyGraphStyle(),
+    private val showPortLabels: Boolean = true,
+    private val layout: TopologyGraphLayout = TopologyGraphLayout(),
 ) {
     fun toDot(topology: Topology): String {
         val nodes = topology.nodes.toList()
@@ -37,7 +39,21 @@ class TopologyRenderer(
                 }
             }
         }
-        val edges = linkedSetOf<Pair<Int, Int>>()
+        val rankedNodes = java.util.Collections.newSetFromMap(IdentityHashMap<Node, Boolean>())
+        layout.sameRank.flatten().forEach { node ->
+            require(ids.containsKey(node)) { "Topology layout references a node outside the topology" }
+            require(rankedNodes.add(node)) { "A node can only appear in one same-rank group" }
+        }
+        layout.sink.forEach { node ->
+            require(ids.containsKey(node)) { "Topology layout references a node outside the topology" }
+            require(rankedNodes.add(node)) { "A node can only have one explicit rank" }
+        }
+        layout.unconstrainedEdges.forEach { (source, target) ->
+            require(ids.containsKey(source) && ids.containsKey(target)) {
+                "Topology layout edge references a node outside the topology"
+            }
+        }
+        val edges = linkedSetOf<PortConnection>()
         nodes.forEach { node ->
             node.ports.forEach { port ->
                 port.synapses.forEach { synapse ->
@@ -45,7 +61,12 @@ class TopologyRenderer(
                     val target = requireNotNull(owners[synapse.target]) {
                         "Target port '${synapse.target.name}' is not owned by a node in this topology"
                     }
-                    edges += owners.getValue(port) to target
+                    edges += PortConnection(
+                        sourceNode = owners.getValue(port),
+                        sourcePort = port,
+                        targetNode = target,
+                        targetPort = synapse.target,
+                    )
                 }
             }
         }
@@ -71,10 +92,47 @@ class TopologyRenderer(
                 val index = ids.getValue(node)
                 appendLine("  n$index [label=\"${label(node)}\"];")
             }
-            edges.forEach { (source, target) -> appendLine("  n$source -> n$target;") }
+            layout.sameRank.forEachIndexed { index, rankNodes ->
+                if (rankNodes.isNotEmpty()) {
+                    appendLine("  subgraph rank_same_$index {")
+                    appendLine("    rank=same;")
+                    rankNodes.forEach { appendLine("    n${ids.getValue(it)};") }
+                    appendLine("  }")
+                }
+            }
+            if (layout.sink.isNotEmpty()) {
+                appendLine("  subgraph rank_sink {")
+                appendLine("    rank=sink;")
+                layout.sink.forEach { appendLine("    n${ids.getValue(it)};") }
+                appendLine("  }")
+            }
+            edges.groupBy { it.sourceNode to it.targetNode }.forEach { (endpoints, connections) ->
+                val (sourceNode, targetNode) = endpoints
+                append("  n$sourceNode -> n$targetNode")
+                val attributes = buildList {
+                    if (showPortLabels) {
+                        val labels = connections.map { it.sourcePort.name }.distinct()
+                        add("xlabel=\"${escape(labels.joinToString(" / "))}\"")
+                    }
+                    val source = nodes[sourceNode]
+                    val target = nodes[targetNode]
+                    if (layout.unconstrainedEdges.any { (from, to) -> from === source && to === target }) {
+                        add("constraint=false")
+                    }
+                }
+                if (attributes.isNotEmpty()) append(" [${attributes.joinToString(", ")}]")
+                appendLine(";")
+            }
             appendLine("}")
         }
     }
+
+    private data class PortConnection(
+        val sourceNode: Int,
+        val sourcePort: Port<*>,
+        val targetNode: Int,
+        val targetPort: Port<*>,
+    )
 
     private fun StringBuilder.appendAttributeBlock(target: String, attributes: Map<String, String>) {
         if (attributes.isEmpty()) return

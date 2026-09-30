@@ -22,10 +22,17 @@ jobs:
       - uses: gradle/actions/setup-gradle@v5
         with:
           gradle-version: "8.10.2"
-      - name: Run tests
-        run: gradle test --no-daemon
       - name: Install Graphviz
         run: sudo apt-get update && sudo apt-get install -y graphviz
+      - name: Run tests
+        run: gradle test --no-daemon
+      - name: Upload topology rendering fixture
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: topology-rendering-fixture
+          path: build/test-artifacts/TopologyRendererTest/self-supervised-training
+          if-no-files-found: warn
       - name: Render example reports
         run: gradle renderExampleReports --no-daemon
       - name: Upload example reports
@@ -54,6 +61,12 @@ jobs:
         with:
           name: example-reports
           path: build/reports/examples
+
+      - name: Download Mermaid topology fixture
+        uses: actions/download-artifact@v7
+        with:
+          name: topology-rendering-fixture
+          path: build/test-artifacts/TopologyRendererTest/self-supervised-training
 
       - name: Publish example reports
         env:
@@ -135,6 +148,16 @@ jobs:
                 >> "$comment_file"
             done < <(find "$report_dir" -maxdepth 1 -type f -name '*.png' -print0 | sort -z)
           done < <(find "$reports_root" -mindepth 1 -maxdepth 1 -type d -print0 | sort -z)
+
+          topology_diagram="build/test-artifacts/TopologyRendererTest/self-supervised-training/topology.mmd"
+          if [ -f "$topology_diagram" ]; then
+            printf '\n## PR #17-shaped learning topology\n\n```mermaid\n' >> "$comment_file"
+            cat "$topology_diagram" >> "$comment_file"
+            printf '\n```\n' >> "$comment_file"
+          else
+            echo "Missing Mermaid topology fixture: $topology_diagram" >&2
+            exit 1
+          fi
 
           [ "$found_report" = true ] || { echo "No example report summaries found" >&2; exit 1; }
 
