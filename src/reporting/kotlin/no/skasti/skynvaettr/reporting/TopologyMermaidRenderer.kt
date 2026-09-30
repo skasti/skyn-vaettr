@@ -65,7 +65,7 @@ class TopologyMermaidRenderer {
                 if (emitted.add(node)) appendNode(node, ids.getValue(node))
             }
             connections.forEach { connection ->
-                val label = "${connection.sourcePort} → ${connection.targetPort}"
+                val label = connection.sourcePort
                 appendLine(
                     "  n${connection.sourceNode} -->|\"${escape(label)}\"| n${connection.targetNode}",
                 )
