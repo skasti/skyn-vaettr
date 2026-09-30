@@ -120,9 +120,9 @@ The reporting source set uses `TopologyRenderer` to inspect `Topology.nodes`, ea
 `ports`, and each port's `synapses`. It writes `topology.dot` and invokes Graphviz to produce
 `topology.png`.
 Ports are not drawn as separate nodes; each directed arrow connects the nodes that own the source and
-target ports. Each distinct source-port/target-port connection is drawn separately and labelled with
-its source port name. This keeps feedback paths visible and distinguishes, for example, a forward
-pass from a parameter update between the same pair of nodes. Repeated identical synapses are
+target ports. Connections between the same pair of nodes are drawn as one arrow, labelled with the
+distinct source port names joined by `/`. This keeps feedback paths visible while showing the
+separate forward-pass, snapshot, and parameter-update channels. Repeated identical synapses are
 collapsed. `Topology.groups` become Graphviz clusters with the group name as their label, and
 disconnected nodes remain visible.
 

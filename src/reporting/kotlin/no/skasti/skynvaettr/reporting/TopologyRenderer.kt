@@ -106,12 +106,16 @@ class TopologyRenderer(
                 layout.sink.forEach { appendLine("    n${ids.getValue(it)};") }
                 appendLine("  }")
             }
-            edges.forEach { edge ->
-                append("  n${edge.sourceNode} -> n${edge.targetNode}")
+            edges.groupBy { it.sourceNode to it.targetNode }.forEach { (endpoints, connections) ->
+                val (sourceNode, targetNode) = endpoints
+                append("  n$sourceNode -> n$targetNode")
                 val attributes = buildList {
-                    if (showPortLabels) add("xlabel=\"${escape(edge.sourcePort.name)}\"")
-                    val source = nodes[edge.sourceNode]
-                    val target = nodes[edge.targetNode]
+                    if (showPortLabels) {
+                        val labels = connections.map { it.sourcePort.name }.distinct()
+                        add("xlabel=\"${escape(labels.joinToString(" / "))}\"")
+                    }
+                    val source = nodes[sourceNode]
+                    val target = nodes[targetNode]
                     if (layout.unconstrainedEdges.any { (from, to) -> from === source && to === target }) {
                         add("constraint=false")
                     }

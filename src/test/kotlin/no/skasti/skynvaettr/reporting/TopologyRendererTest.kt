@@ -109,12 +109,11 @@ class TopologyRendererTest {
         val query = topology.nodes.single { it.name == "Query" }
         val key = topology.nodes.single { it.name == "Key" }
         val value = topology.nodes.single { it.name == "Value" }
-        val decoder = topology.nodes.single { it.name == "SignalPredictionDecoder" }
         val trainer = topology.nodes.single { it.name == "SelfSupervisedSignalTrainer" }
         val renderer = TopologyRenderer(
             layout = TopologyGraphLayout(
                 sameRank = listOf(listOf(query, key, value)),
-                sink = listOf(decoder, trainer),
+                sink = listOf(trainer),
                 unconstrainedEdges = listOf(
                     trainer to query,
                     trainer to key,
@@ -130,14 +129,10 @@ class TopologyRendererTest {
         assertEquals(listOf("Sensory Processing", "Prediction", "Learning"), topology.groups.keys.toList())
         assertTrue("label=\"InspectableSampleEntryPoint\"" in dot)
         assertTrue("label=\"SelfSupervisedSignalTrainer\"" in dot)
-        assertTrue("xlabel=\"q-forward-pass\"" in dot)
-        assertTrue("xlabel=\"q-parameter-snapshot\"" in dot)
-        assertTrue("xlabel=\"q-snapshot-request\"" in dot)
-        assertTrue("xlabel=\"q-update\"" in dot)
-        assertTrue("n2 -> n8 [xlabel=\"q-forward-pass\"]" in dot)
-        assertTrue("n2 -> n8 [xlabel=\"q-parameter-snapshot\"]" in dot)
-        assertTrue("n8 -> n2 [xlabel=\"q-snapshot-request\", constraint=false]" in dot)
-        assertTrue("n8 -> n2 [xlabel=\"q-update\", constraint=false]" in dot)
+        assertTrue("xlabel=\"q-forward-pass / q-parameter-snapshot\"" in dot)
+        assertTrue("xlabel=\"q-snapshot-request / q-update\"" in dot)
+        assertTrue("n2 -> n8 [xlabel=\"q-forward-pass / q-parameter-snapshot\"]" in dot)
+        assertTrue("n8 -> n2 [xlabel=\"q-snapshot-request / q-update\", constraint=false]" in dot)
         assertTrue("subgraph rank_same_0" in dot)
         assertTrue("subgraph rank_sink" in dot)
 
