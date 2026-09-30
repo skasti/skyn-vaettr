@@ -151,9 +151,9 @@ jobs:
 
           topology_diagram="build/test-artifacts/TopologyRendererTest/self-supervised-training/topology.mmd"
           if [ -f "$topology_diagram" ]; then
-            printf '\\n## PR #17-shaped learning topology\\n\\n```mermaid\\n' >> "$comment_file"
+            printf '\n## PR #17-shaped learning topology\n\n```mermaid\n' >> "$comment_file"
             cat "$topology_diagram" >> "$comment_file"
-            printf '\\n```\\n' >> "$comment_file"
+            printf '\n```\n' >> "$comment_file"
           else
             echo "Missing Mermaid topology fixture: $topology_diagram" >&2
             exit 1
