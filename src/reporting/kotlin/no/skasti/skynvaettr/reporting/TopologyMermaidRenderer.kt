@@ -43,7 +43,7 @@ class TopologyMermaidRenderer {
                     val targetIndex = requireNotNull(owners[synapse.target]) {
                         "Target port '${synapse.target.name}' is not owned by a node in this topology"
                     }
-                    connections.getOrPut(sourceIndex to targetIndex, ::linkedSetOf)
+                    connections.getOrPut(sourceIndex to targetIndex) { linkedSetOf() }
                         .add("${port.name} → ${synapse.target.name}")
                 }
             }
