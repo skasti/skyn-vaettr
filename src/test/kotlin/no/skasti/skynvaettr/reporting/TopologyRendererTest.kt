@@ -26,11 +26,11 @@ class TopologyRendererTest {
 
         val dot = TopologyRenderer().toDot(topology(first, second, isolated))
 
-        assertEquals(3, Regex("label=").findAll(dot).count())
+        assertEquals(3, Regex("n\\d+ \\[label=").findAll(dot).count())
         assertEquals(3, Regex(" -> ").findAll(dot).count())
-        assertTrue("n0 -> n1;" in dot)
-        assertTrue("n1 -> n0;" in dot)
-        assertTrue("n1 -> n1;" in dot)
+        assertTrue("n0 -> n1 [xlabel=\"port\"]" in dot)
+        assertTrue("n1 -> n0 [xlabel=\"port\"]" in dot)
+        assertTrue("n1 -> n1 [xlabel=\"port\"]" in dot)
         assertTrue("n2 [label=\"TestNode\"];" in dot)
     }
 
@@ -89,6 +89,45 @@ class TopologyRendererTest {
         assertTrue("graph [rankdir=TB];" in dot)
         assertTrue("node [shape=ellipse, style=filled];" in dot)
         assertTrue("edge [color=red, penwidth=2];" in dot)
+    }
+
+    @Test
+    fun `can omit port labels for compact topology diagrams`() {
+        val first = TestNode()
+        val second = TestNode()
+        first.port.connectTo(second.port)
+
+        val dot = TopologyRenderer(showPortLabels = false).toDot(topology(first, second))
+
+        assertTrue("n0 -> n1;" in dot)
+        assertTrue("xlabel=\"port\"" !in dot)
+    }
+
+    @Test
+    fun `renders a PR 17 shaped grouped topology with port labels`() {
+        val topology = selfSupervisedTrainingTopology()
+        val dot = TopologyRenderer().toDot(topology)
+        val directory = Path.of("build", "test-artifacts", "TopologyRendererTest", "self-supervised-training")
+
+        assertEquals(9, topology.nodes.size)
+        assertEquals(listOf("Sensory Processing", "Prediction", "Learning"), topology.groups.keys.toList())
+        assertTrue("label=\"InspectableSampleEntryPoint\"" in dot)
+        assertTrue("label=\"SelfSupervisedSignalTrainer\"" in dot)
+        assertTrue("xlabel=\"q-forward-pass\"" in dot)
+        assertTrue("xlabel=\"q-parameter-snapshot\"" in dot)
+        assertTrue("xlabel=\"q-snapshot-request\"" in dot)
+        assertTrue("xlabel=\"q-update\"" in dot)
+        assertTrue("n2 -> n8 [xlabel=\"q-forward-pass\"]" in dot)
+        assertTrue("n2 -> n8 [xlabel=\"q-parameter-snapshot\"]" in dot)
+        assertTrue("n8 -> n2 [xlabel=\"q-snapshot-request\"]" in dot)
+        assertTrue("n8 -> n2 [xlabel=\"q-update\"]" in dot)
+
+        Files.createDirectories(directory)
+        Files.writeString(directory.resolve("topology.dot"), dot)
+        val executable = System.getenv("GRAPHVIZ_DOT") ?: "dot"
+        assumeTrue(graphvizAvailable(executable), "Graphviz is unavailable; topology.dot was still written")
+        TopologyRenderer().render(topology, directory)
+        assertTrue(Files.isRegularFile(directory.resolve("topology.png")))
     }
 
     @Test
@@ -154,4 +193,142 @@ class TopologyRendererTest {
         override val name: String,
         override val nodes: List<Node>,
     ) : Group
+
+    private fun selfSupervisedTrainingTopology(): Topology {
+        fun node(name: String, vararg ports: String) = DiagramNode(name, ports.toList())
+
+        val entry = node("InspectableSampleEntryPoint", "samples", "sample-position-metadata", "new-samples")
+        val stream = node(
+            "OnlineSignalPredictionStream",
+            "new-samples", "metadata", "representation", "observations", "frame", "prefix",
+        )
+        val query = node(
+            "Query", "q-input", "q", "q-forward-pass", "q-parameter-snapshot-request",
+            "q-parameter-update", "q-parameter-snapshot",
+        )
+        val key = node(
+            "Key", "k-input", "k", "k-forward-pass", "k-parameter-snapshot-request",
+            "k-parameter-update", "k-parameter-snapshot",
+        )
+        val value = node(
+            "Value", "v-input", "v", "v-forward-pass", "v-parameter-snapshot-request",
+            "v-parameter-update", "v-parameter-snapshot",
+        )
+        val attention = node("Attention", "q", "k", "v", "attention", "weights", "attention-forward-pass")
+        val decoderProjection = node(
+            "DecoderProjection", "decoder-input", "decoder", "decoder-forward-pass",
+            "decoder-parameter-snapshot-request", "decoder-parameter-update", "decoder-parameter-snapshot",
+        )
+        val decoder = node("SignalPredictionDecoder", "frame", "attention-pass", "decoder-pass", "predictions")
+        val trainer = node(
+            "SelfSupervisedSignalTrainer", "q-pass", "k-pass", "v-pass", "decoded", "observations",
+            "q-snapshot-request", "k-snapshot-request", "v-snapshot-request", "decoder-snapshot-request",
+            "q-snapshot", "k-snapshot", "v-snapshot", "decoder-snapshot",
+            "q-update", "k-update", "v-update", "decoder-update",
+        )
+
+        val sensory = Group.build("Sensory Processing") {
+            add(entry); add(stream)
+            entry.port("new-samples").connectTo(stream.port("new-samples"))
+            entry.port("sample-position-metadata").connectTo(stream.port("metadata"))
+            entry.port("samples").connectTo(stream.port("representation"))
+            expose("prefix", stream.port("prefix"))
+            expose("frame", stream.port("frame"))
+            expose("observations", stream.port("observations"))
+        }
+        val prediction = Group.build("Prediction") {
+            add(query); add(key); add(value); add(attention); add(decoderProjection); add(decoder)
+            query.port("q").connectTo(attention.port("q"))
+            key.port("k").connectTo(attention.port("k"))
+            value.port("v").connectTo(attention.port("v"))
+            attention.port("attention").connectTo(decoderProjection.port("decoder-input"))
+            attention.port("attention-forward-pass").connectTo(decoder.port("attention-pass"))
+            decoderProjection.port("decoder-forward-pass").connectTo(decoder.port("decoder-pass"))
+            expose("query-input", query.port("q-input"))
+            expose("key-input", key.port("k-input"))
+            expose("value-input", value.port("v-input"))
+            expose("frame", decoder.port("frame"))
+            expose("predictions", decoder.port("predictions"))
+            expose("query-forward", query.port("q-forward-pass"))
+            expose("key-forward", key.port("k-forward-pass"))
+            expose("value-forward", value.port("v-forward-pass"))
+            expose("query-snapshot-request", query.port("q-parameter-snapshot-request"))
+            expose("key-snapshot-request", key.port("k-parameter-snapshot-request"))
+            expose("value-snapshot-request", value.port("v-parameter-snapshot-request"))
+            expose("decoder-snapshot-request", decoderProjection.port("decoder-parameter-snapshot-request"))
+            expose("query-snapshot", query.port("q-parameter-snapshot"))
+            expose("key-snapshot", key.port("k-parameter-snapshot"))
+            expose("value-snapshot", value.port("v-parameter-snapshot"))
+            expose("decoder-snapshot", decoderProjection.port("decoder-parameter-snapshot"))
+            expose("query-update", query.port("q-parameter-update"))
+            expose("key-update", key.port("k-parameter-update"))
+            expose("value-update", value.port("v-parameter-update"))
+            expose("decoder-update", decoderProjection.port("decoder-parameter-update"))
+        }
+        val learning = Group.build("Learning") {
+            add(trainer)
+            listOf("observations", "predictions", "query-forward", "key-forward", "value-forward",
+                "query-snapshot-request", "key-snapshot-request", "value-snapshot-request", "decoder-snapshot-request",
+                "query-snapshot", "key-snapshot", "value-snapshot", "decoder-snapshot",
+                "query-update", "key-update", "value-update", "decoder-update").forEach { name ->
+                expose(name, trainer.port(name.toPortName()))
+            }
+        }
+
+        sensory.port<Any>("prefix").connectTo(
+            prediction.port("query-input"), prediction.port("key-input"), prediction.port("value-input"),
+        )
+        sensory.port<Any>("frame").connectTo(prediction.port("frame"))
+        sensory.port<Any>("observations").connectTo(learning.port("observations"))
+        prediction.port<Any>("predictions").connectTo(learning.port("predictions"))
+        prediction.port<Any>("query-forward").connectTo(learning.port("query-forward"))
+        prediction.port<Any>("key-forward").connectTo(learning.port("key-forward"))
+        prediction.port<Any>("value-forward").connectTo(learning.port("value-forward"))
+        listOf("query", "key", "value", "decoder").forEach { role ->
+            learning.port<Any>("$role-snapshot-request")
+                .connectTo(prediction.port("$role-snapshot-request"))
+            prediction.port<Any>("$role-snapshot").connectTo(learning.port("$role-snapshot"))
+            learning.port<Any>("$role-update").connectTo(prediction.port("$role-update"))
+        }
+        return object : Topology {
+            override val nodes = listOf(entry, stream, query, key, value, attention, decoderProjection, decoder, trainer)
+            override val groups = linkedMapOf(
+                sensory.name to sensory,
+                prediction.name to prediction,
+                learning.name to learning,
+            )
+            override fun update() = Unit
+        }
+    }
+
+    private fun String.toPortName(): String = when (this) {
+        "query-forward" -> "q-pass"
+        "key-forward" -> "k-pass"
+        "value-forward" -> "v-pass"
+        "query-snapshot-request" -> "q-snapshot-request"
+        "key-snapshot-request" -> "k-snapshot-request"
+        "value-snapshot-request" -> "v-snapshot-request"
+        "decoder-snapshot-request" -> "decoder-snapshot-request"
+        "query-snapshot" -> "q-snapshot"
+        "key-snapshot" -> "k-snapshot"
+        "value-snapshot" -> "v-snapshot"
+        "query-update" -> "q-update"
+        "key-update" -> "k-update"
+        "value-update" -> "v-update"
+        "decoder-update" -> "decoder-update"
+        "observations" -> "observations"
+        "predictions" -> "decoded"
+        else -> error("No trainer port for group port '$this'")
+    }
+
+    private class DiagramNode(
+        override val name: String,
+        portNames: List<String>,
+    ) : Node {
+        private val namedPorts = portNames.associateWith { SingleSlotPort<Any>(it) }
+        override val ports = namedPorts.values.toList()
+        fun port(name: String): SingleSlotPort<Any> = checkNotNull(namedPorts[name]) {
+            "Unknown diagram port '$name' on $this"
+        }
+    }
 }

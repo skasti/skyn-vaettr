@@ -120,18 +120,22 @@ The reporting source set uses `TopologyRenderer` to inspect `Topology.nodes`, ea
 `ports`, and each port's `synapses`. It writes `topology.dot` and invokes Graphviz to produce
 `topology.png`.
 Ports are not drawn as separate nodes; each directed arrow connects the nodes that own the source and
-target ports. `Topology.groups` become Graphviz clusters with the group name as their label. Multiple
-connections between the same pair of nodes are rendered as one arrow, while disconnected nodes remain
-visible.
+target ports. Each distinct source-port/target-port connection is drawn separately and labelled with
+its source port name. This keeps feedback paths visible and distinguishes, for example, a forward
+pass from a parameter update between the same pair of nodes. Repeated identical synapses are
+collapsed. `Topology.groups` become Graphviz clusters with the group name as their label, and
+disconnected nodes remain visible.
 
 Install Graphviz and make `dot` available on `PATH`, or set `GRAPHVIZ_DOT` to the executable path.
 The example reports can then be rendered with `./gradlew renderExampleReports` or
 `gradlew.bat renderExampleReports` on Windows. CI installs Graphviz and publishes the topology image
 alongside the example charts.
 
-`TopologyRenderer` uses `TopologyGraphStyle` for Graphviz styling. The default style uses a light
-filled node theme, rounded group clusters, orthogonal connections, and a transparent background. A
-report can provide another style when it creates the renderer:
+`TopologyRenderer` uses `TopologyGraphStyle` for Graphviz styling. The default style uses the light
+blue nodes, dark blue labels, white background, and orthogonal connections used by the topology
+rendering example. Port labels can be disabled for a more compact view with
+`TopologyRenderer(showPortLabels = false)`. A report can provide another style when it creates the
+renderer:
 
 ```kotlin
 val style = TopologyGraphStyle(

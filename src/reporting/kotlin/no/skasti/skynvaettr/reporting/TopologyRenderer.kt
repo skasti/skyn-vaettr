@@ -12,6 +12,7 @@ import no.skasti.skynvaettr.topology.Topology
 class TopologyRenderer(
     private val executable: String = System.getenv("GRAPHVIZ_DOT") ?: "dot",
     private val style: TopologyGraphStyle = TopologyGraphStyle(),
+    private val showPortLabels: Boolean = true,
 ) {
     fun toDot(topology: Topology): String {
         val nodes = topology.nodes.toList()
@@ -37,7 +38,7 @@ class TopologyRenderer(
                 }
             }
         }
-        val edges = linkedSetOf<Pair<Int, Int>>()
+        val edges = linkedSetOf<PortConnection>()
         nodes.forEach { node ->
             node.ports.forEach { port ->
                 port.synapses.forEach { synapse ->
@@ -45,7 +46,12 @@ class TopologyRenderer(
                     val target = requireNotNull(owners[synapse.target]) {
                         "Target port '${synapse.target.name}' is not owned by a node in this topology"
                     }
-                    edges += owners.getValue(port) to target
+                    edges += PortConnection(
+                        sourceNode = owners.getValue(port),
+                        sourcePort = port,
+                        targetNode = target,
+                        targetPort = synapse.target,
+                    )
                 }
             }
         }
@@ -71,10 +77,23 @@ class TopologyRenderer(
                 val index = ids.getValue(node)
                 appendLine("  n$index [label=\"${label(node)}\"];")
             }
-            edges.forEach { (source, target) -> appendLine("  n$source -> n$target;") }
+            edges.forEach { edge ->
+                append("  n${edge.sourceNode} -> n${edge.targetNode}")
+                if (showPortLabels) {
+                    append(" [xlabel=\"${escape(edge.sourcePort.name)}\"]")
+                }
+                appendLine(";")
+            }
             appendLine("}")
         }
     }
+
+    private data class PortConnection(
+        val sourceNode: Int,
+        val sourcePort: Port<*>,
+        val targetNode: Int,
+        val targetPort: Port<*>,
+    )
 
     private fun StringBuilder.appendAttributeBlock(target: String, attributes: Map<String, String>) {
         if (attributes.isEmpty()) return
