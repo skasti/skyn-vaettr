@@ -119,8 +119,7 @@ every connected target belongs to its `nodes` list, nor does it own a separate c
 The reporting source set uses `TopologyRenderer` to inspect `Topology.nodes`, each node's `name` and
 `ports`, and each port's `synapses`. It writes `topology.dot` and invokes Graphviz to produce
 `topology.png`. `TopologyMermaidRenderer` exports the same topology as a Mermaid flowchart for
-Markdown reports and GitHub comments; groups become subgraphs and each edge label lists its distinct
-individual source/target port pairs, so each connection remains a short, separate arrow.
+Markdown reports and GitHub comments; groups become subgraphs and each connection remains a separate, short arrow labelled by its source port.
 Ports are not drawn as separate nodes; each directed arrow connects the nodes that own the source and
 target ports. Connections between the same pair of nodes are drawn as one arrow, labelled with the
 distinct source port names joined by `/`. This keeps feedback paths visible while showing the
