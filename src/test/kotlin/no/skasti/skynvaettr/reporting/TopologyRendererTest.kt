@@ -136,11 +136,10 @@ class TopologyRendererTest {
         assertTrue("xlabel=\"q-update\"" in dot)
         assertTrue("n2 -> n8 [xlabel=\"q-forward-pass\"]" in dot)
         assertTrue("n2 -> n8 [xlabel=\"q-parameter-snapshot\"]" in dot)
-        assertTrue("n8 -> n2 [xlabel=\"q-snapshot-request\"]" in dot)
-        assertTrue("n8 -> n2 [xlabel=\"q-update\"]" in dot)
+        assertTrue("n8 -> n2 [xlabel=\"q-snapshot-request\", constraint=false]" in dot)
+        assertTrue("n8 -> n2 [xlabel=\"q-update\", constraint=false]" in dot)
         assertTrue("subgraph rank_same_0" in dot)
         assertTrue("subgraph rank_sink" in dot)
-        assertTrue("n8 -> n2 [xlabel=\"q-update\", constraint=false]" in dot)
 
         Files.createDirectories(directory)
         Files.writeString(directory.resolve("topology.dot"), dot)
