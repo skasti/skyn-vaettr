@@ -22,10 +22,17 @@ jobs:
       - uses: gradle/actions/setup-gradle@v5
         with:
           gradle-version: "8.10.2"
-      - name: Run tests
-        run: gradle test --no-daemon
       - name: Install Graphviz
         run: sudo apt-get update && sudo apt-get install -y graphviz
+      - name: Run tests
+        run: gradle test --no-daemon
+      - name: Upload topology rendering fixture
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: topology-rendering-fixture
+          path: build/test-artifacts/TopologyRendererTest/self-supervised-training
+          if-no-files-found: warn
       - name: Render example reports
         run: gradle renderExampleReports --no-daemon
       - name: Upload example reports
