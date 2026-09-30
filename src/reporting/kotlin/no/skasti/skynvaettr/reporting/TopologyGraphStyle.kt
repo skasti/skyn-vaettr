@@ -18,6 +18,7 @@ data class TopologyGraphStyle(
         "outputorder" to "edgesfirst",
         "concentrate" to "false",
         "forcelabels" to "true",
+        "newrank" to "true",
     ),
     val nodeAttributes: Map<String, String> = mapOf(
         "shape" to "box",
