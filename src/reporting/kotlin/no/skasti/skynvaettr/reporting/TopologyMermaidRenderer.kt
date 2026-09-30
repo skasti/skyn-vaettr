@@ -6,10 +6,7 @@ import no.skasti.skynvaettr.topology.Port
 import no.skasti.skynvaettr.topology.Topology
 
 /**
- * Exports a topology as a Mermaid flowchart, preserving its groups and port-level connections.
- *
- * Connections between the same pair of nodes share an edge with one label line per distinct port
- * pair. This keeps learning feedback visible without drawing a dense bundle of parallel arrows.
+ * Exports a topology as a Mermaid flowchart, preserving its groups and individual port connections.
  */
 class TopologyMermaidRenderer {
     fun toMermaid(topology: Topology): String {
@@ -35,7 +32,7 @@ class TopologyMermaidRenderer {
             }
         }
 
-        val connections = linkedMapOf<Pair<Int, Int>, LinkedHashSet<String>>()
+        val connections = linkedSetOf<PortConnection>()
         nodes.forEachIndexed { sourceIndex, node ->
             node.ports.forEach { port ->
                 port.synapses.forEach { synapse ->
@@ -43,8 +40,12 @@ class TopologyMermaidRenderer {
                     val targetIndex = requireNotNull(owners[synapse.target]) {
                         "Target port '${synapse.target.name}' is not owned by a node in this topology"
                     }
-                    connections.getOrPut(sourceIndex to targetIndex) { linkedSetOf() }
-                        .add("${port.name} → ${synapse.target.name}")
+                    connections += PortConnection(
+                        sourceNode = sourceIndex,
+                        sourcePort = port.name,
+                        targetNode = targetIndex,
+                        targetPort = synapse.target.name,
+                    )
                 }
             }
         }
@@ -63,10 +64,19 @@ class TopologyMermaidRenderer {
             nodes.forEach { node ->
                 if (emitted.add(node)) appendNode(node, ids.getValue(node))
             }
-            connections.forEach { (endpoints, labels) ->
-                val (source, target) = endpoints
-                val label = labels.joinToString("<br/>") { escape(it) }
-                appendLine("  n$source -->|$label| n$target")
+            connections.forEach { connection ->
+                val label = "${connection.sourcePort} → ${connection.targetPort}"
+                appendLine(
+                    "  n${connection.sourceNode} -->|\"${escape(label)}\"| n${connection.targetNode}",
+                )
+            }
+            if (nodes.isNotEmpty()) {
+                appendLine("  classDef topologyNode fill:#E4F3FF,stroke:#CFDCE8,stroke-width:1.4px,color:#0055A5")
+                appendLine("  class ${nodes.indices.joinToString(",") { "n$it" }} topologyNode")
+            }
+            appendLine("  linkStyle default stroke:#888888,stroke-width:1.1px")
+            topology.groups.values.forEachIndexed { groupIndex, _ ->
+                appendLine("  style group$groupIndex fill:#FFFFFF,stroke:#C7D8E8,color:#0055A5")
             }
         }
     }
@@ -83,4 +93,11 @@ class TopologyMermaidRenderer {
         .replace(">", "#62;")
         .replace("\r", "")
         .replace("\n", "<br/>")
+
+    private data class PortConnection(
+        val sourceNode: Int,
+        val sourcePort: String,
+        val targetNode: Int,
+        val targetPort: String,
+    )
 }
