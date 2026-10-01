@@ -7,6 +7,7 @@ import no.skasti.skynvaettr.topology.Topology
 
 /**
  * Exports a topology as a Mermaid flowchart, preserving its groups and individual port connections.
+ * Connected target ports outside [Topology.nodes] are shown as data export endpoints.
  */
 class TopologyMermaidRenderer {
     fun toMermaid(topology: Topology): String {
@@ -32,18 +33,21 @@ class TopologyMermaidRenderer {
             }
         }
 
+        val externalIds = IdentityHashMap<Port<*>, String>()
+        val externalPorts = mutableListOf<Port<*>>()
         val connections = linkedSetOf<PortConnection>()
         nodes.forEachIndexed { sourceIndex, node ->
             node.ports.forEach { port ->
                 port.synapses.forEach { synapse ->
                     require(synapse.source === port) { "Outgoing synapse has a different source port" }
-                    val targetIndex = requireNotNull(owners[synapse.target]) {
-                        "Target port '${synapse.target.name}' is not owned by a node in this topology"
-                    }
+                    val targetId = owners[synapse.target]?.let { "n$it" }
+                        ?: externalIds.getOrPut(synapse.target) {
+                            "externalPort${externalPorts.size}".also { externalPorts += synapse.target }
+                        }
                     connections += PortConnection(
                         sourceNode = sourceIndex,
                         sourcePort = port.name,
-                        targetNode = targetIndex,
+                        targetId = targetId,
                         targetPort = synapse.target.name,
                     )
                 }
@@ -64,15 +68,22 @@ class TopologyMermaidRenderer {
             nodes.forEach { node ->
                 if (emitted.add(node)) appendNode(node, ids.getValue(node))
             }
+            externalPorts.forEach { port ->
+                appendLine("  ${externalIds.getValue(port)}@{ shape: das, label: \"${escape(port.name)}\" }")
+            }
             connections.forEach { connection ->
                 val label = connection.sourcePort
                 appendLine(
-                    "  n${connection.sourceNode} -->|\"${escape(label)}\"| n${connection.targetNode}",
+                    "  n${connection.sourceNode} -->|\"${escape(label)}\"| ${connection.targetId}",
                 )
             }
             if (nodes.isNotEmpty()) {
                 appendLine("  classDef topologyNode fill:#E4F3FF,stroke:#CFDCE8,stroke-width:1.4px,color:#0055A5")
                 appendLine("  class ${nodes.indices.joinToString(",") { "n$it" }} topologyNode")
+            }
+            if (externalPorts.isNotEmpty()) {
+                appendLine("  classDef externalPort fill:#D5F5F0,stroke:#45A99B,stroke-width:1.4px,color:#075E54")
+                appendLine("  class ${externalPorts.joinToString(",") { externalIds.getValue(it) }} externalPort")
             }
             appendLine("  linkStyle default stroke:#888888,stroke-width:1.1px")
             topology.groups.values.forEachIndexed { groupIndex, _ ->
@@ -97,7 +108,7 @@ class TopologyMermaidRenderer {
     private data class PortConnection(
         val sourceNode: Int,
         val sourcePort: String,
-        val targetNode: Int,
+        val targetId: String,
         val targetPort: String,
     )
 }
