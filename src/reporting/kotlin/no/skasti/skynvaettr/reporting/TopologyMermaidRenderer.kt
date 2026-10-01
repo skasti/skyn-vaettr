@@ -56,6 +56,7 @@ class TopologyMermaidRenderer {
 
         return buildString {
             appendLine("flowchart LR")
+            appendLine("""%%{init: {"layout": "elk", "flowchart": {"curve": "rounded"}}}%%""")
             val emitted = java.util.Collections.newSetFromMap(IdentityHashMap<Node, Boolean>())
             topology.groups.values.forEachIndexed { groupIndex, group ->
                 appendLine("  subgraph group$groupIndex[\"${escape(group.name)}\"]")

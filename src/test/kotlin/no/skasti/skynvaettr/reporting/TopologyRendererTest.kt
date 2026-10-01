@@ -144,6 +144,7 @@ class TopologyRendererTest {
         assertTrue("subgraph rank_sink" in dot)
 
         assertTrue(mermaid.startsWith("flowchart LR"))
+        assertTrue("""%%{init: {"layout": "elk", "flowchart": {"curve": "rounded"}}}%%""" in mermaid)
         assertTrue("subgraph group0[\"Sensory Processing\"]" in mermaid)
         assertTrue("subgraph group1[\"Prediction\"]" in mermaid)
         assertTrue("subgraph group2[\"Learning\"]" in mermaid)
