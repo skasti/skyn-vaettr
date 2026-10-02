@@ -30,10 +30,12 @@ jobs:
         with:
           node-version: "22"
       - name: Render Mermaid topology to SVG
-        run: >-
-          npx --yes @mermaid-js/mermaid-cli@latest
-          --input build/test-artifacts/TopologyRendererTest/self-supervised-training/topology.mmd
-          --output build/test-artifacts/TopologyRendererTest/self-supervised-training/topology.svg
+        run: |
+          printf '%s\n' '{"args":["--no-sandbox","--disable-setuid-sandbox"]}' > "$RUNNER_TEMP/mermaid-puppeteer.json"
+          npx --yes @mermaid-js/mermaid-cli@latest \
+            --puppeteerConfigFile "$RUNNER_TEMP/mermaid-puppeteer.json" \
+            --input build/test-artifacts/TopologyRendererTest/self-supervised-training/topology.mmd \
+            --output build/test-artifacts/TopologyRendererTest/self-supervised-training/topology.svg
       - name: Upload topology rendering fixture
         if: always()
         uses: actions/upload-artifact@v6
