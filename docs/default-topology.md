@@ -120,7 +120,21 @@ The reporting source set uses `TopologyRenderer` to inspect `Topology.nodes`, ea
 `ports`, and each port's `synapses`. It writes `topology.dot` and invokes Graphviz to produce
 `topology.png`. `TopologyMermaidRenderer` exports the same topology as a Mermaid flowchart for
 Markdown reports and GitHub comments; groups become subgraphs and each connection remains a separate, short arrow labelled by its source port.
-Ports are not drawn as separate nodes; each directed arrow connects the nodes that own the source and
+The generated Mermaid diagram configures ELK layout and `curve: rounded` for orthogonal connections
+with rounded corners, including feedback paths and exports.
+CI renders the Mermaid flowchart to `topology.svg` and embeds that image in the PR comment and job
+summary, since GitHub's Mermaid renderer does not support the ELK layout used by this diagram.
+In Mermaid, a connected target port that is not owned by a node in `Topology.nodes` is rendered as a
+turquoise `das` (direct access storage) endpoint outside the groups, labelled with the target port's
+name. This makes data exported to report collectors visible without adding those collectors to the
+processing topology. Connect collectors before calling `toMermaid(topology)`. A shared target port
+gets one endpoint; distinct ports keep separate endpoints even when their names match. Outgoing
+connections from these external ports are not traversed. This rendering uses
+[Mermaid 11.13.0 or later](https://github.com/mermaid-js/mermaid/releases/tag/mermaid%4011.13.0)
+with the ELK layout available for rounded orthogonal connections (`das` alone requires 11.3.0+).
+
+Graphviz requires each target port to belong to a topology node. In its diagrams, ports are not drawn
+as separate nodes; each directed arrow connects the nodes that own the source and
 target ports. Connections between the same pair of nodes are drawn as one arrow, labelled with the
 distinct source port names joined by `/`. This keeps feedback paths visible while showing the
 separate forward-pass, snapshot, and parameter-update channels. Repeated identical synapses are

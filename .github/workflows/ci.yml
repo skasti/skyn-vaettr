@@ -26,6 +26,16 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y graphviz
       - name: Run tests
         run: gradle test --no-daemon
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      - name: Render Mermaid topology to SVG
+        run: |
+          printf '%s\n' '{"args":["--no-sandbox","--disable-setuid-sandbox"]}' > "$RUNNER_TEMP/mermaid-puppeteer.json"
+          npx --yes @mermaid-js/mermaid-cli@latest \
+            --puppeteerConfigFile "$RUNNER_TEMP/mermaid-puppeteer.json" \
+            --input build/test-artifacts/TopologyRendererTest/self-supervised-training/topology.mmd \
+            --output build/test-artifacts/TopologyRendererTest/self-supervised-training/topology.svg
       - name: Upload topology rendering fixture
         if: always()
         uses: actions/upload-artifact@v6
@@ -151,9 +161,14 @@ jobs:
 
           topology_diagram="build/test-artifacts/TopologyRendererTest/self-supervised-training/topology.mmd"
           if [ -f "$topology_diagram" ]; then
-            printf '\n## PR #17-shaped learning topology\n\n```mermaid\n' >> "$comment_file"
-            cat "$topology_diagram" >> "$comment_file"
-            printf '\n```\n' >> "$comment_file"
+            topology_svg="build/test-artifacts/TopologyRendererTest/self-supervised-training/topology.svg"
+            if [ ! -f "$topology_svg" ]; then
+              echo "Missing rendered Mermaid topology: $topology_svg" >&2
+              exit 1
+            fi
+            publish_file "$topology_svg" "pr-$PR_NUMBER/examples/topology.svg"
+            printf '\n## PR #17-shaped learning topology\n\n![PR #17-shaped learning topology](%s/topology.svg?run=%s)\n' \
+              "$raw_base" "$GITHUB_RUN_ID" >> "$comment_file"
           else
             echo "Missing Mermaid topology fixture: $topology_diagram" >&2
             exit 1

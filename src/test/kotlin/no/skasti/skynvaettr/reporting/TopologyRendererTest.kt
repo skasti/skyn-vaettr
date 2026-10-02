@@ -123,7 +123,13 @@ class TopologyRendererTest {
             ),
         )
         val dot = renderer.toDot(topology)
-        val mermaid = TopologyMermaidRenderer().toMermaid(topology)
+        // Export collectors belong to the Mermaid fixture; Graphviz still requires internal targets.
+        val mermaidTopology = selfSupervisedTrainingTopology()
+        mermaidTopology.nodes.single { it.name == "Query" }.port<Any>("q-forward-pass")
+            .connectTo(SingleSlotPort("Query passes"))
+        mermaidTopology.nodes.single { it.name == "SignalPredictionDecoder" }.port<Any>("predictions")
+            .connectTo(SingleSlotPort("Predictions"))
+        val mermaid = TopologyMermaidRenderer().toMermaid(mermaidTopology)
         val directory = Path.of("build", "test-artifacts", "TopologyRendererTest", "self-supervised-training")
 
         assertEquals(9, topology.nodes.size)
@@ -138,6 +144,7 @@ class TopologyRendererTest {
         assertTrue("subgraph rank_sink" in dot)
 
         assertTrue(mermaid.startsWith("flowchart LR"))
+        assertTrue("""%%{init: {"layout": "elk", "flowchart": {"curve": "rounded"}}}%%""" in mermaid)
         assertTrue("subgraph group0[\"Sensory Processing\"]" in mermaid)
         assertTrue("subgraph group1[\"Prediction\"]" in mermaid)
         assertTrue("subgraph group2[\"Learning\"]" in mermaid)
@@ -147,6 +154,10 @@ class TopologyRendererTest {
         assertTrue("n2 -->|\"q-parameter-snapshot\"| n8" in mermaid)
         assertTrue("classDef topologyNode fill:#E4F3FF,stroke:#CFDCE8" in mermaid)
         assertTrue("linkStyle default stroke:#888888" in mermaid)
+        assertTrue("externalPort0@{ shape: das, label: \"Query passes\" }" in mermaid)
+        assertTrue("externalPort1@{ shape: das, label: \"Predictions\" }" in mermaid)
+        assertTrue("n2 -->|\"q-forward-pass\"| externalPort0" in mermaid)
+        assertTrue("n7 -->|\"predictions\"| externalPort1" in mermaid)
 
         Files.createDirectories(directory)
         Files.writeString(directory.resolve("topology.dot"), dot)
