@@ -122,6 +122,8 @@ The reporting source set uses `TopologyRenderer` to inspect `Topology.nodes`, ea
 Markdown reports and GitHub comments; groups become subgraphs and each connection remains a separate, short arrow labelled by its source port.
 The generated Mermaid diagram configures ELK layout and `curve: rounded` for orthogonal connections
 with rounded corners, including feedback paths and exports.
+CI renders the Mermaid flowchart to `topology.svg` and embeds that image in the PR comment and job
+summary, since GitHub's Mermaid renderer does not support the ELK layout used by this diagram.
 In Mermaid, a connected target port that is not owned by a node in `Topology.nodes` is rendered as a
 turquoise `das` (direct access storage) endpoint outside the groups, labelled with the target port's
 name. This makes data exported to report collectors visible without adding those collectors to the
