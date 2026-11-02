@@ -59,19 +59,65 @@ class LearnableProcessingChainTest {
         assertEquals(1L, node.revision)
         // Recorded passes are immutable, even after applying replacement parameters.
         assertEquals(2.0, pass.backward(Representation.of(Embedding.of(1.0), Embedding.of(0.0))).input[0][0])
-        assertFailsWith<IllegalStateException> {
-            node.parameterUpdates.receive(LinearParameterUpdate(0, LinearParameters.identity(1)))
+        val observedResults = mutableListOf<LinearParameterUpdateResult>()
+        val resultSink = SingleSlotPort<LinearParameterUpdateResult>("results")
+        node.updateResults.connectTo(resultSink)
+        resultSink.onReceive += {
+            observedResults += requireNotNull(resultSink.pending)
+            resultSink.clear()
         }
+        node.parameterUpdates.receive(LinearParameterUpdate(0, LinearParameters.identity(1)))
+        assertEquals(
+            LinearParameterUpdateResult.Rejected(0, 1, LinearParameterUpdateResult.Rejected.Reason.STALE_REVISION),
+            observedResults.single(),
+        )
+        assertNull(node.parameterUpdates.pending)
+        node.parameterUpdates.receive(LinearParameterUpdate(1, LinearParameters.identity(1)))
+        assertEquals(2L, node.revision)
+        assertEquals(LinearParameterUpdateResult.Applied(1, 2), observedResults.last())
     }
 
     @Test
-    fun `invalid updates preserve revision and pending input`() {
+    fun `rejected stale and malformed updates are observable and do not block the next update`() {
         val node = TrainableProjectionNode(LinearParameters.identity(2))
-        assertFailsWith<IllegalArgumentException> {
-            node.parameterUpdates.receive(LinearParameterUpdate(0, LinearParameters.identity(1)))
+        val resultSink = SingleSlotPort<LinearParameterUpdateResult>("result")
+        val results = mutableListOf<LinearParameterUpdateResult>()
+        node.updateResults.connectTo(resultSink)
+        resultSink.onReceive += {
+            results += requireNotNull(resultSink.pending)
+            resultSink.clear()
         }
+
+        node.parameterUpdates.receive(LinearParameterUpdate(5, LinearParameters.identity(2)))
         assertEquals(0L, node.revision)
-        assertNotNull(node.parameterUpdates.pending)
+        assertNull(node.parameterUpdates.pending)
+        assertEquals(
+            LinearParameterUpdateResult.Rejected(5, 0, LinearParameterUpdateResult.Rejected.Reason.STALE_REVISION),
+            results.last(),
+        )
+
+        node.parameterUpdates.receive(LinearParameterUpdate(0, LinearParameters.identity(1)))
+        assertEquals(0L, node.revision)
+        assertNull(node.parameterUpdates.pending)
+        assertEquals(
+            LinearParameterUpdateResult.Rejected(0, 0, LinearParameterUpdateResult.Rejected.Reason.INVALID_SHAPE),
+            results.last(),
+        )
+
+        val replacement = LinearParameters(
+            listOf(doubleArrayOf(2.0, 0.0), doubleArrayOf(0.0, 3.0)),
+            doubleArrayOf(0.0, 0.0),
+        )
+        node.parameterUpdates.receive(LinearParameterUpdate(0, replacement))
+        assertEquals(1L, node.revision)
+        assertNull(node.parameterUpdates.pending)
+        assertEquals(LinearParameterUpdateResult.Applied(0, 1), results.last())
+
+        val observed = SingleSlotPort<Representation>("out")
+        node.output.connectTo(observed)
+        node.input.receive(Representation.of(Embedding.of(4.0, 5.0)))
+        assertEquals(8.0, observed.pending!![0][0])
+        assertEquals(15.0, observed.pending!![0][1])
     }
 
     @Test
