@@ -83,4 +83,72 @@ class LearnableProcessingChainTest {
             )
         }
     }
+
+    @Test
+    fun `prediction gradient propagates through attention to Q K and V`() {
+        val chain = LearnableProcessingChain(
+            LinearParameters.identity(1), LinearParameters.identity(1),
+            LinearParameters.identity(1), LinearParameters.identity(1),
+        )
+        val queryPass = SingleSlotPort<LinearForwardPass>("query-pass")
+        val keyPass = SingleSlotPort<LinearForwardPass>("key-pass")
+        val valuePass = SingleSlotPort<LinearForwardPass>("value-pass")
+        val attentionPass = SingleSlotPort<AttentionForwardPass>("attention-pass")
+        val decoderPass = SingleSlotPort<LinearForwardPass>("decoder-pass")
+        chain.query.forwardPasses.connectTo(queryPass)
+        chain.key.forwardPasses.connectTo(keyPass)
+        chain.value.forwardPasses.connectTo(valuePass)
+        chain.attention.forwardPasses.connectTo(attentionPass)
+        chain.decoder.forwardPasses.connectTo(decoderPass)
+
+        chain.input.receive(Representation.of(Embedding.of(1.0), Embedding.of(2.0)))
+        val decoderGradient = assertNotNull(decoderPass.pending).backward(
+            Representation.of(Embedding.of(1.0), Embedding.of(0.0)),
+        )
+        val attentionGradients = assertNotNull(attentionPass.pending).backward(decoderGradient.input)
+        val q = assertNotNull(queryPass.pending).backward(attentionGradients.query)
+        val k = assertNotNull(keyPass.pending).backward(attentionGradients.key)
+        val v = assertNotNull(valuePass.pending).backward(attentionGradients.value)
+        assertEquals(1, q.weights.size)
+        assertEquals(1, k.weights.size)
+        assertEquals(1, v.weights.size)
+        // Nontrivial two-position attention gives Q/K gradients, not only value gradients.
+        kotlin.test.assertTrue(kotlin.math.abs(q.weights[0][0]) > 1e-8)
+        kotlin.test.assertTrue(kotlin.math.abs(k.weights[0][0]) > 1e-8)
+        kotlin.test.assertTrue(kotlin.math.abs(v.weights[0][0]) > 1e-8)
+    }
+
+    @Test
+    fun `attention backward agrees with centered finite differences`() {
+        val attention = ScaledDotProductAttention()
+        val q = Representation.of(Embedding.of(0.4), Embedding.of(-0.8))
+        val k = Representation.of(Embedding.of(1.2), Embedding.of(-0.3))
+        val v = Representation.of(Embedding.of(2.0), Embedding.of(-1.0))
+        val result = attention.apply(q, k, v)
+        val pass = AttentionForwardPass(q, k, v, result.output, result.weights)
+        val seed = Representation.of(Embedding.of(1.0), Embedding.of(-0.4))
+        val grads = pass.backward(seed)
+        val epsilon = 1e-6
+
+        fun loss(qq: Representation, kk: Representation, vv: Representation): Double {
+            val out = attention.apply(qq, kk, vv).output
+            return (0 until out.positions).sumOf { i -> out[i][0] * seed[i][0] }
+        }
+        fun changed(original: Representation, position: Int, delta: Double): Representation =
+            Representation.from(original.mapIndexed { index, e ->
+                Embedding.of(e[0] + if (index == position) delta else 0.0)
+            })
+
+        for (position in 0 until 2) {
+            val qNumeric = (loss(changed(q, position, epsilon), k, v) -
+                loss(changed(q, position, -epsilon), k, v)) / (2 * epsilon)
+            val kNumeric = (loss(q, changed(k, position, epsilon), v) -
+                loss(q, changed(k, position, -epsilon), v)) / (2 * epsilon)
+            val vNumeric = (loss(q, k, changed(v, position, epsilon)) -
+                loss(q, k, changed(v, position, -epsilon))) / (2 * epsilon)
+            kotlin.test.assertEquals(qNumeric, grads.query[position][0], 1e-6)
+            kotlin.test.assertEquals(kNumeric, grads.key[position][0], 1e-6)
+            kotlin.test.assertEquals(vNumeric, grads.value[position][0], 1e-6)
+        }
+    }
 }
