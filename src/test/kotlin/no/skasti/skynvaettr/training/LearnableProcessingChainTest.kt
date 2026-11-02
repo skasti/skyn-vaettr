@@ -5,14 +5,76 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertSame
 import no.skasti.skynvaettr.attention.LinearRepresentationProjection
 import no.skasti.skynvaettr.attention.ProjectionNode
 import no.skasti.skynvaettr.attention.ScaledDotProductAttention
 import no.skasti.skynvaettr.representation.Embedding
 import no.skasti.skynvaettr.representation.Representation
 import no.skasti.skynvaettr.runtime.SingleSlotPort
+import no.skasti.skynvaettr.topology.Node
+import no.skasti.skynvaettr.topology.Port
 
 class LearnableProcessingChainTest {
+
+    @Test
+    fun `recorded attention delivers matching output and pass to a consumer waiting for both`() {
+        // Both ports are ordinary, independent inputs. The consumer, not the producer,
+        // decides when it has enough information to process an execution.
+        class AttentionConsumer : Node {
+            override val name = "Attention consumer"
+            val outputInput = SingleSlotPort<Representation>("attention-input")
+            val passInput = SingleSlotPort<AttentionForwardPass>("forward-pass-input")
+            override val ports: List<Port<*>> = listOf(outputInput, passInput)
+            val processed = mutableListOf<Pair<Representation, AttentionForwardPass>>()
+
+            init {
+                fun processIfReady() {
+                    val output = outputInput.pending ?: return
+                    val pass = passInput.pending ?: return
+                    outputInput.clear()
+                    passInput.clear()
+                    processed += output to pass
+                }
+                outputInput.onReceive += { processIfReady() }
+                passInput.onReceive += { processIfReady() }
+            }
+        }
+
+        val node = RecordedAttentionNode()
+        val consumer = AttentionConsumer()
+        val arrivalOrder = mutableListOf<String>()
+        consumer.outputInput.onReceive += { arrivalOrder += "attention" }
+        consumer.passInput.onReceive += { arrivalOrder += "forwardPass" }
+        node.attention.connectTo(consumer.outputInput)
+        node.forwardPasses.connectTo(consumer.passInput)
+
+        val queries = Representation.of(Embedding.of(1.0), Embedding.of(2.0))
+        val keys = Representation.of(Embedding.of(0.5), Embedding.of(-1.0))
+        val values = Representation.of(Embedding.of(3.0), Embedding.of(7.0))
+        node.q.receive(queries)
+        node.k.receive(keys)
+        assertEquals(0, consumer.processed.size)
+        node.v.receive(values)
+
+        assertEquals(listOf("attention", "forwardPass"), arrivalOrder)
+        assertEquals(1, consumer.processed.size)
+        val (emitted, pass) = consumer.processed.single()
+        assertSame(emitted, pass.output)
+        assertEquals(ScaledDotProductAttention().apply(queries, keys, values).output.toList(), emitted.toList())
+        assertNull(consumer.outputInput.pending)
+        assertNull(consumer.passInput.pending)
+
+        // The very same consumer also works when the two inputs arrive in reverse order.
+        val reverseConsumer = AttentionConsumer()
+        reverseConsumer.passInput.receive(pass)
+        assertEquals(0, reverseConsumer.processed.size)
+        reverseConsumer.outputInput.receive(emitted)
+        assertEquals(1, reverseConsumer.processed.size)
+        assertSame(emitted, reverseConsumer.processed.single().first)
+        assertSame(pass, reverseConsumer.processed.single().second)
+    }
+
 
     @Test
     fun `trainable node specializes projection node without changing ordinary ports`() {
