@@ -2,6 +2,8 @@ package no.skasti.skynvaettr.attention
 
 import no.skasti.skynvaettr.representation.Embedding
 import no.skasti.skynvaettr.representation.Representation
+import no.skasti.skynvaettr.training.LinearForwardPass
+import no.skasti.skynvaettr.training.LinearParameters
 import no.skasti.skynvaettr.runtime.SingleSlotPort
 import no.skasti.skynvaettr.topology.Node
 import no.skasti.skynvaettr.topology.Port
@@ -22,56 +24,59 @@ object IdentityRepresentationProjection : RepresentationProjection {
  * [weights] is indexed as output dimension, then input dimension. The input width is therefore
  * `weights.first().size`, and the output width is `weights.size`.
  */
+interface TrainableRepresentationProjection : RepresentationProjection {
+    val inputDimensions: Int
+    val outputDimensions: Int
+    fun parametersSnapshot(): LinearParameters
+    fun replaceParameters(parameters: LinearParameters)
+    fun recordForward(input: Representation, output: Representation, revision: Long): LinearForwardPass
+}
+
+/**
+ * Linear transform shared by static and trainable projection nodes.
+ * Replacing parameters never changes the input or output shape.
+ */
 class LinearRepresentationProjection(
     weights: List<DoubleArray>,
     bias: DoubleArray = DoubleArray(weights.size),
-) : RepresentationProjection {
-    private val weights: List<DoubleArray> = weights.map(DoubleArray::clone)
-    private val bias: DoubleArray = bias.clone()
+) : TrainableRepresentationProjection {
+    private var parameters = LinearParameters(weights, bias)
 
-    init {
-        require(this.weights.isNotEmpty()) { "linear projection must have at least one output dimension" }
-        val inputDimensions = this.weights.first().size
-        require(inputDimensions > 0) { "linear projection must have at least one input dimension" }
-        require(this.weights.all { it.size == inputDimensions }) {
-            "all linear projection rows must have the same input dimension"
-        }
-        require(this.bias.size == this.weights.size) {
-            "linear projection bias must match the output dimension"
-        }
-        require(this.weights.all { row -> row.all(Double::isFinite) } && this.bias.all(Double::isFinite)) {
-            "linear projection parameters must be finite"
-        }
+    constructor(parameters: LinearParameters) : this(parameters.weightsCopy(), parameters.biasCopy())
+
+    override val inputDimensions: Int = parameters.inputDimensions
+    override val outputDimensions: Int = parameters.outputDimensions
+
+    override fun parametersSnapshot(): LinearParameters = parameters
+
+    override fun replaceParameters(parameters: LinearParameters) {
+        require(parameters.inputDimensions == inputDimensions &&
+            parameters.outputDimensions == outputDimensions) { "projection parameter shape mismatch" }
+        this.parameters = parameters
     }
-
-    val inputDimensions: Int
-        get() = weights.first().size
-
-    val outputDimensions: Int
-        get() = weights.size
 
     override fun apply(input: Representation): Representation {
         require(input.dimensions == inputDimensions) {
             "linear projection expects $inputDimensions dimensions, got ${input.dimensions}"
         }
-        return Representation.from(
-            input.map { embedding ->
-                Embedding.from(
-                    DoubleArray(outputDimensions) { output ->
-                        bias[output] + (0 until inputDimensions).sumOf { dimension ->
-                            weights[output][dimension] * embedding[dimension]
-                        }
-                    },
-                )
-            }.toList(),
-        )
+        val snapshot = parameters
+        return Representation.from(input.map { embedding ->
+            Embedding.from(DoubleArray(outputDimensions) { output ->
+                snapshot.offset(output) + (0 until inputDimensions).sumOf { dimension ->
+                    snapshot.weight(output, dimension) * embedding[dimension]
+                }
+            })
+        }.toList())
     }
+
+    override fun recordForward(input: Representation, output: Representation, revision: Long): LinearForwardPass =
+        LinearForwardPass(input, output, revision, parametersSnapshot())
 }
 
 /** Base node for the query, key, and value projection stages. */
 open class ProjectionNode(
     private val role: String,
-    private val projection: RepresentationProjection = IdentityRepresentationProjection,
+    protected val projection: RepresentationProjection = IdentityRepresentationProjection,
     override val name: String = role,
 ) : Node {
     val input = SingleSlotPort<Representation>("$role-input")
@@ -83,11 +88,11 @@ open class ProjectionNode(
         input.onReceive += { processIfReady() }
     }
 
-    private fun processIfReady() {
+    protected open fun onProjected(input: Representation, output: Representation) {}\n\n    private fun processIfReady() {
         val value = input.pending ?: return
         val projected = projection.apply(value)
         input.clear()
-        output.emit(projected)
+        output.emit(projected)\n        onProjected(value, projected)
     }
 }
 
