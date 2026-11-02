@@ -92,7 +92,7 @@ class LearnableProcessingChainTest {
         kotlin.test.assertIs<ProjectionNode>(learnedNode)
         assertEquals(staticOutput.pending!!.toList(), learnedOutput.pending!!.toList())
         assertEquals(2, staticNode.ports.size)
-        assertEquals(6, learnedNode.ports.size)
+        assertEquals(7, learnedNode.ports.size)
         assertEquals(7.0, learnedOutput.pending!![0][0])
     }
 
