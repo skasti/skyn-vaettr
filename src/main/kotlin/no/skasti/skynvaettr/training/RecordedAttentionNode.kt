@@ -77,6 +77,11 @@ class AttentionForwardPass(
  * Attention node with an additional observed forward-pass port. Only the scaled-dot-product
  * derivative is supported; other Attention implementations must not be silently differentiated
  * using the wrong mathematical operation.
+ *
+ * The attention representation is delivered before its forward-pass record as two independent
+ * port emissions, not as one atomic pair. A consumer with both inputs should process only once
+ * its required inputs are present. Matching overlapping or asynchronously delivered executions
+ * is not guaranteed by the current synchronous single-slot topology.
  */
 class RecordedAttentionNode(
     private val implementation: Attention = ScaledDotProductAttention(),
