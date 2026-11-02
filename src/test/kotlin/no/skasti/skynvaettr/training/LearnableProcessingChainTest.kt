@@ -1,0 +1,285 @@
+package no.skasti.skynvaettr.training
+
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
+import kotlin.test.assertSame
+import no.skasti.skynvaettr.attention.LinearRepresentationProjection
+import no.skasti.skynvaettr.attention.ProjectionNode
+import no.skasti.skynvaettr.attention.ScaledDotProductAttention
+import no.skasti.skynvaettr.representation.Embedding
+import no.skasti.skynvaettr.representation.Representation
+import no.skasti.skynvaettr.runtime.SingleSlotPort
+import no.skasti.skynvaettr.topology.Node
+import no.skasti.skynvaettr.topology.Port
+
+class LearnableProcessingChainTest {
+
+    @Test
+    fun `recorded attention delivers matching output and pass to a consumer waiting for both`() {
+        // Both ports are ordinary, independent inputs. The consumer, not the producer,
+        // decides when it has enough information to process an execution.
+        class AttentionConsumer : Node {
+            override val name = "Attention consumer"
+            val outputInput = SingleSlotPort<Representation>("attention-input")
+            val passInput = SingleSlotPort<AttentionForwardPass>("forward-pass-input")
+            override val ports: List<Port<*>> = listOf(outputInput, passInput)
+            val processed = mutableListOf<Pair<Representation, AttentionForwardPass>>()
+
+            init {
+                fun processIfReady() {
+                    val output = outputInput.pending ?: return
+                    val pass = passInput.pending ?: return
+                    outputInput.clear()
+                    passInput.clear()
+                    processed += output to pass
+                }
+                outputInput.onReceive += { processIfReady() }
+                passInput.onReceive += { processIfReady() }
+            }
+        }
+
+        val node = RecordedAttentionNode()
+        val consumer = AttentionConsumer()
+        val arrivalOrder = mutableListOf<String>()
+        consumer.outputInput.onReceive += { arrivalOrder += "attention" }
+        consumer.passInput.onReceive += { arrivalOrder += "forwardPass" }
+        node.attention.connectTo(consumer.outputInput)
+        node.forwardPasses.connectTo(consumer.passInput)
+
+        val queries = Representation.of(Embedding.of(1.0), Embedding.of(2.0))
+        val keys = Representation.of(Embedding.of(0.5), Embedding.of(-1.0))
+        val values = Representation.of(Embedding.of(3.0), Embedding.of(7.0))
+        node.q.receive(queries)
+        node.k.receive(keys)
+        assertEquals(0, consumer.processed.size)
+        node.v.receive(values)
+
+        assertEquals(listOf("attention", "forwardPass"), arrivalOrder)
+        assertEquals(1, consumer.processed.size)
+        val (emitted, pass) = consumer.processed.single()
+        assertSame(emitted, pass.output)
+        assertEquals(ScaledDotProductAttention().apply(queries, keys, values).output.toList(), emitted.toList())
+        assertNull(consumer.outputInput.pending)
+        assertNull(consumer.passInput.pending)
+
+        // The very same consumer also works when the two inputs arrive in reverse order.
+        val reverseConsumer = AttentionConsumer()
+        reverseConsumer.passInput.receive(pass)
+        assertEquals(0, reverseConsumer.processed.size)
+        reverseConsumer.outputInput.receive(emitted)
+        assertEquals(1, reverseConsumer.processed.size)
+        assertSame(emitted, reverseConsumer.processed.single().first)
+        assertSame(pass, reverseConsumer.processed.single().second)
+    }
+
+
+    @Test
+    fun `trainable node specializes projection node without changing ordinary ports`() {
+        val parameters = LinearParameters(listOf(doubleArrayOf(2.0)), doubleArrayOf(1.0))
+        val staticNode = ProjectionNode("linear", LinearRepresentationProjection(parameters))
+        val learnedNode = TrainableProjectionNode(LinearRepresentationProjection(parameters))
+        val input = Representation.of(Embedding.of(3.0))
+        val staticOutput = SingleSlotPort<Representation>("static")
+        val learnedOutput = SingleSlotPort<Representation>("learned")
+        staticNode.output.connectTo(staticOutput)
+        learnedNode.output.connectTo(learnedOutput)
+        staticNode.input.receive(input)
+        learnedNode.input.receive(input)
+
+        kotlin.test.assertIs<ProjectionNode>(learnedNode)
+        assertEquals(staticOutput.pending!!.toList(), learnedOutput.pending!!.toList())
+        assertEquals(2, staticNode.ports.size)
+        assertEquals(7, learnedNode.ports.size)
+        assertEquals(7.0, learnedOutput.pending!![0][0])
+    }
+
+    @Test
+    fun `linear node records gradients for the actual version used`() {
+        val node = TrainableProjectionNode(
+            LinearParameters(listOf(doubleArrayOf(2.0)), doubleArrayOf(1.0)),
+        )
+        val output = SingleSlotPort<Representation>("out")
+        val passes = SingleSlotPort<LinearForwardPass>("passes")
+        node.output.connectTo(output)
+        node.forwardPasses.connectTo(passes)
+
+        node.input.receive(Representation.of(Embedding.of(3.0), Embedding.of(4.0)))
+        assertEquals(7.0, output.pending!![0][0])
+        assertEquals(9.0, output.pending!![1][0])
+        val pass = assertNotNull(passes.pending)
+        val derivative = pass.backward(Representation.of(Embedding.of(1.0), Embedding.of(-2.0)))
+        assertEquals(-5.0, derivative.weights[0][0])
+        assertEquals(-1.0, derivative.bias[0])
+        assertEquals(2.0, derivative.input[0][0])
+        assertEquals(-4.0, derivative.input[1][0])
+        assertEquals(0L, pass.revision)
+
+        node.parameterUpdates.receive(LinearParameterUpdate(0, LinearParameters.identity(1)))
+        assertEquals(1L, node.revision)
+        // Recorded passes are immutable, even after applying replacement parameters.
+        assertEquals(2.0, pass.backward(Representation.of(Embedding.of(1.0), Embedding.of(0.0))).input[0][0])
+        val observedResults = mutableListOf<LinearParameterUpdateResult>()
+        val resultSink = SingleSlotPort<LinearParameterUpdateResult>("results")
+        node.updateResults.connectTo(resultSink)
+        resultSink.onReceive += {
+            observedResults += requireNotNull(resultSink.pending)
+            resultSink.clear()
+        }
+        node.parameterUpdates.receive(LinearParameterUpdate(0, LinearParameters.identity(1)))
+        assertEquals(
+            LinearParameterUpdateResult.Rejected(0, 1, LinearParameterUpdateResult.Rejected.Reason.STALE_REVISION),
+            observedResults.single(),
+        )
+        assertNull(node.parameterUpdates.pending)
+        node.parameterUpdates.receive(LinearParameterUpdate(1, LinearParameters.identity(1)))
+        assertEquals(2L, node.revision)
+        assertEquals(LinearParameterUpdateResult.Applied(1, 2), observedResults.last())
+    }
+
+    @Test
+    fun `rejected stale and malformed updates are observable and do not block the next update`() {
+        val node = TrainableProjectionNode(LinearParameters.identity(2))
+        val resultSink = SingleSlotPort<LinearParameterUpdateResult>("result")
+        val results = mutableListOf<LinearParameterUpdateResult>()
+        node.updateResults.connectTo(resultSink)
+        resultSink.onReceive += {
+            results += requireNotNull(resultSink.pending)
+            resultSink.clear()
+        }
+
+        node.parameterUpdates.receive(LinearParameterUpdate(5, LinearParameters.identity(2)))
+        assertEquals(0L, node.revision)
+        assertNull(node.parameterUpdates.pending)
+        assertEquals(
+            LinearParameterUpdateResult.Rejected(5, 0, LinearParameterUpdateResult.Rejected.Reason.STALE_REVISION),
+            results.last(),
+        )
+
+        node.parameterUpdates.receive(LinearParameterUpdate(0, LinearParameters.identity(1)))
+        assertEquals(0L, node.revision)
+        assertNull(node.parameterUpdates.pending)
+        assertEquals(
+            LinearParameterUpdateResult.Rejected(0, 0, LinearParameterUpdateResult.Rejected.Reason.INVALID_SHAPE),
+            results.last(),
+        )
+
+        val replacement = LinearParameters(
+            listOf(doubleArrayOf(2.0, 0.0), doubleArrayOf(0.0, 3.0)),
+            doubleArrayOf(0.0, 0.0),
+        )
+        node.parameterUpdates.receive(LinearParameterUpdate(0, replacement))
+        assertEquals(1L, node.revision)
+        assertNull(node.parameterUpdates.pending)
+        assertEquals(LinearParameterUpdateResult.Applied(0, 1), results.last())
+
+        val observed = SingleSlotPort<Representation>("out")
+        node.output.connectTo(observed)
+        node.input.receive(Representation.of(Embedding.of(4.0, 5.0)))
+        assertEquals(8.0, observed.pending!![0][0])
+        assertEquals(15.0, observed.pending!![0][1])
+    }
+
+    @Test
+    fun `general chain connects QKV attention to a learnable decoder`() {
+        val chain = LearnableProcessingChain(
+            queryParameters = LinearParameters.identity(1),
+            keyParameters = LinearParameters.identity(1),
+            valueParameters = LinearParameters.identity(1),
+            decoderParameters = LinearParameters(listOf(doubleArrayOf(2.0)), doubleArrayOf(1.0)),
+            attentionImplementation = ScaledDotProductAttention(),
+        )
+        val observed = SingleSlotPort<Representation>("observed")
+        val decoderPass = SingleSlotPort<LinearForwardPass>("decoder-pass")
+        chain.output.connectTo(observed)
+        chain.decoder.forwardPasses.connectTo(decoderPass)
+
+        chain.input.receive(Representation.of(Embedding.of(3.0)))
+        assertEquals(7.0, observed.pending!![0][0])
+        assertNotNull(decoderPass.pending)
+        assertEquals(6, chain.nodes.size)
+        assertNull(chain.decoder.input.pending)
+    }
+
+    @Test
+    fun `chain rejects inconsistent widths before wiring`() {
+        assertFailsWith<IllegalArgumentException> {
+            LearnableProcessingChain(
+                LinearParameters.identity(2),
+                LinearParameters.identity(1),
+                LinearParameters.identity(2),
+                LinearParameters.identity(2),
+            )
+        }
+    }
+
+    @Test
+    fun `prediction gradient propagates through attention to Q K and V`() {
+        val chain = LearnableProcessingChain(
+            LinearParameters.identity(1), LinearParameters.identity(1),
+            LinearParameters.identity(1), LinearParameters.identity(1),
+        )
+        val queryPass = SingleSlotPort<LinearForwardPass>("query-pass")
+        val keyPass = SingleSlotPort<LinearForwardPass>("key-pass")
+        val valuePass = SingleSlotPort<LinearForwardPass>("value-pass")
+        val attentionPass = SingleSlotPort<AttentionForwardPass>("attention-pass")
+        val decoderPass = SingleSlotPort<LinearForwardPass>("decoder-pass")
+        chain.query.forwardPasses.connectTo(queryPass)
+        chain.key.forwardPasses.connectTo(keyPass)
+        chain.value.forwardPasses.connectTo(valuePass)
+        chain.attention.forwardPasses.connectTo(attentionPass)
+        chain.decoder.forwardPasses.connectTo(decoderPass)
+
+        chain.input.receive(Representation.of(Embedding.of(1.0), Embedding.of(2.0)))
+        val decoderGradient = assertNotNull(decoderPass.pending).backward(
+            Representation.of(Embedding.of(1.0), Embedding.of(0.0)),
+        )
+        val attentionGradients = assertNotNull(attentionPass.pending).backward(decoderGradient.input)
+        val q = assertNotNull(queryPass.pending).backward(attentionGradients.query)
+        val k = assertNotNull(keyPass.pending).backward(attentionGradients.key)
+        val v = assertNotNull(valuePass.pending).backward(attentionGradients.value)
+        assertEquals(1, q.weights.size)
+        assertEquals(1, k.weights.size)
+        assertEquals(1, v.weights.size)
+        // Nontrivial two-position attention gives Q/K gradients, not only value gradients.
+        kotlin.test.assertTrue(kotlin.math.abs(q.weights[0][0]) > 1e-8)
+        kotlin.test.assertTrue(kotlin.math.abs(k.weights[0][0]) > 1e-8)
+        kotlin.test.assertTrue(kotlin.math.abs(v.weights[0][0]) > 1e-8)
+    }
+
+    @Test
+    fun `attention backward agrees with centered finite differences`() {
+        val attention = ScaledDotProductAttention()
+        val q = Representation.of(Embedding.of(0.4), Embedding.of(-0.8))
+        val k = Representation.of(Embedding.of(1.2), Embedding.of(-0.3))
+        val v = Representation.of(Embedding.of(2.0), Embedding.of(-1.0))
+        val result = attention.apply(q, k, v)
+        val pass = AttentionForwardPass(q, k, v, result.output, result.weights)
+        val seed = Representation.of(Embedding.of(1.0), Embedding.of(-0.4))
+        val grads = pass.backward(seed)
+        val epsilon = 1e-6
+
+        fun loss(qq: Representation, kk: Representation, vv: Representation): Double {
+            val out = attention.apply(qq, kk, vv).output
+            return (0 until out.positions).sumOf { i -> out[i][0] * seed[i][0] }
+        }
+        fun changed(original: Representation, position: Int, delta: Double): Representation =
+            Representation.from(original.mapIndexed { index, e ->
+                Embedding.of(e[0] + if (index == position) delta else 0.0)
+            })
+
+        for (position in 0 until 2) {
+            val qNumeric = (loss(changed(q, position, epsilon), k, v) -
+                loss(changed(q, position, -epsilon), k, v)) / (2 * epsilon)
+            val kNumeric = (loss(q, changed(k, position, epsilon), v) -
+                loss(q, changed(k, position, -epsilon), v)) / (2 * epsilon)
+            val vNumeric = (loss(q, k, changed(v, position, epsilon)) -
+                loss(q, k, changed(v, position, -epsilon))) / (2 * epsilon)
+            kotlin.test.assertEquals(qNumeric, grads.query[position][0], 1e-6)
+            kotlin.test.assertEquals(kNumeric, grads.key[position][0], 1e-6)
+            kotlin.test.assertEquals(vNumeric, grads.value[position][0], 1e-6)
+        }
+    }
+}
