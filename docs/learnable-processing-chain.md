@@ -34,7 +34,7 @@ pass retains the exact input, output, parameter snapshot and revision, and can c
 vector-Jacobian product via `backward(outputGradient)`. The result contains input,
 weight and bias gradients. Arrays are copied at the public boundary.
 
-An external trainer may compute its own objective/learning rate, use
+The `RecordedAttentionNode` also emits an `AttentionForwardPass` with the actual\nsoftmax weights. Its analytic `backward` yields query, key and value gradients. A trainer\ncan compose the decoder VJP, attention VJP and three projection VJPs to propagate a\nloss through the full chain. This derivative is intentionally restricted to\n`ScaledDotProductAttention`, not arbitrary plug-in attention implementations.\n\nAn external trainer may compute its own objective/learning rate, use
 `LinearParameters.descend(gradients, learningRate)`, then submit
 `LinearParameterUpdate(expectedRevision, newParameters)`. A stale revision or a shape
 change is rejected, and neither the node nor `DefaultTopology` decides how/when to
@@ -42,12 +42,13 @@ train. Frozen evaluation can simply omit parameter updates.
 
 ### Current limit and next validation
 
-The current `AttentionNode` exposes forward attention only. **This initial PR does not
-provide gradients through attention or demonstrate end-to-end training of Q/K/V from
-prediction error.** The Q/K/V linear nodes are individually trainable from supplied
-gradients, but a future change must provide recorded attention VJPs and join the actual
-forward passes before a generic trainer can propagate decoder error to all stages.
-Do not replace that missing derivative with heuristic updates or misleading claims.
+The chain supports an **analytical end-to-end gradient path** for one recorded forward pass,
+including Q/K/V and decoder. It does not include a built-in loss, supervised target resolver,
+optimizer, experience memory, replay schedule or automatic update of parameters. The
+`Trainer` contract remains independent: it is responsible for selecting actual targets,
+computing output gradients and issuing revision-checked updates. This PR does not claim
+that any learned forecast generalizes. Tests cover gradient propagation and compare
+attention derivatives with centered finite differences.
 
 Before promoting learned binary semantics, confidence gating, retention quotas or replay
 policies, reproduce improvements on multiple seeds and signal identities, including
