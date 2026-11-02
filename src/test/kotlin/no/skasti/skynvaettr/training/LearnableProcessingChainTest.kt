@@ -13,7 +13,7 @@ import no.skasti.skynvaettr.runtime.SingleSlotPort
 class LearnableProcessingChainTest {
     @Test
     fun `linear node records gradients for the actual version used`() {
-        val node = TrainableLinearNode(
+        val node = TrainableProjectionNode(
             LinearParameters(listOf(doubleArrayOf(2.0)), doubleArrayOf(1.0)),
         )
         val output = SingleSlotPort<Representation>("out")
@@ -43,7 +43,7 @@ class LearnableProcessingChainTest {
 
     @Test
     fun `invalid updates preserve revision and pending input`() {
-        val node = TrainableLinearNode(LinearParameters.identity(2))
+        val node = TrainableProjectionNode(LinearParameters.identity(2))
         assertFailsWith<IllegalArgumentException> {
             node.parameterUpdates.receive(LinearParameterUpdate(0, LinearParameters.identity(1)))
         }
