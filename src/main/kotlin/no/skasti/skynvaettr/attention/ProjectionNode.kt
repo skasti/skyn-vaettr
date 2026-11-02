@@ -88,11 +88,14 @@ open class ProjectionNode(
         input.onReceive += { processIfReady() }
     }
 
-    protected open fun onProjected(input: Representation, output: Representation) {}\n\n    private fun processIfReady() {
+    protected open fun onProjected(input: Representation, output: Representation) {}
+
+    private fun processIfReady() {
         val value = input.pending ?: return
         val projected = projection.apply(value)
         input.clear()
-        output.emit(projected)\n        onProjected(value, projected)
+        onProjected(value, projected)
+        output.emit(projected)
     }
 }
 
