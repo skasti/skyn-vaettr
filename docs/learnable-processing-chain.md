@@ -27,14 +27,20 @@ flowchart LR
 its input connected to an existing `SampleEntryPoint.output`. The topology does not
 automatically attach a trainer or alter how Samples are sensed.
 
-Each `TrainableLinearNode` accepts a fixed-shape `LinearParameters` (weights and bias),
+Each `TrainableProjectionNode` accepts a fixed-shape `LinearParameters` (weights and bias),
 produces a position-wise linear output and an inspectable `LinearForwardPass`, and
 exposes `snapshotRequests`, `parameterSnapshots`, and `parameterUpdates`. The recorded
 pass retains the exact input, output, parameter snapshot and revision, and can compute a
 vector-Jacobian product via `backward(outputGradient)`. The result contains input,
 weight and bias gradients. Arrays are copied at the public boundary.
 
-The `RecordedAttentionNode` also emits an `AttentionForwardPass` with the actual\nsoftmax weights. Its analytic `backward` yields query, key and value gradients. A trainer\ncan compose the decoder VJP, attention VJP and three projection VJPs to propagate a\nloss through the full chain. This derivative is intentionally restricted to\n`ScaledDotProductAttention`, not arbitrary plug-in attention implementations.\n\nAn external trainer may compute its own objective/learning rate, use
+The `RecordedAttentionNode` also emits an `AttentionForwardPass` with the actual
+softmax weights. Its analytic `backward` yields query, key and value gradients. A trainer
+can compose the decoder VJP, attention VJP and three projection VJPs to propagate a
+loss through the full chain. This derivative is intentionally restricted to
+`ScaledDotProductAttention`, not arbitrary plug-in attention implementations.
+
+An external trainer may compute its own objective/learning rate, use
 `LinearParameters.descend(gradients, learningRate)`, then submit
 `LinearParameterUpdate(expectedRevision, newParameters)`. A stale revision or a shape
 change is rejected, and neither the node nor `DefaultTopology` decides how/when to
