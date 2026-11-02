@@ -1,7 +1,6 @@
 package no.skasti.skynvaettr.training
 
 import no.skasti.skynvaettr.attention.Attention
-import no.skasti.skynvaettr.attention.AttentionNode
 import no.skasti.skynvaettr.attention.ScaledDotProductAttention
 import no.skasti.skynvaettr.representation.Representation
 import no.skasti.skynvaettr.runtime.SingleSlotPort
@@ -32,10 +31,7 @@ class RepresentationFanoutNode(override val name: String = "Representation fanou
  * implicit change to DefaultTopology. Pass parameter snapshots/forward passes to an external
  * trainer and route revision-checked replacements back to individual linear nodes.
  *
- * The current AttentionNode provides forward attention only: this composition does not yet
- * expose attention's backward pass. Decoder gradients can be trained directly; propagating
- * prediction loss through attention to Q/K/V is a separate capability, not silently assumed.
- */
+ * The recorded attention pass and each linear forward pass expose local derivatives; an external\n * trainer can compose them to propagate decoder loss to Q/K/V without adding an optimizer here.\n */
 class LearnableProcessingChain(
     queryParameters: LinearParameters,
     keyParameters: LinearParameters,
@@ -47,7 +43,7 @@ class LearnableProcessingChain(
     val query = TrainableLinearNode(queryParameters, "Query")
     val key = TrainableLinearNode(keyParameters, "Key")
     val value = TrainableLinearNode(valueParameters, "Value")
-    val attention = AttentionNode(attentionImplementation)
+    val attention = RecordedAttentionNode(attentionImplementation)
     val decoder = TrainableLinearNode(decoderParameters, "Decoder")
 
     val input: Port<Representation> get() = ingress.input
