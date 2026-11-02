@@ -117,8 +117,8 @@ class TrainableLinearNode(
 
     init {
         require(name.isNotBlank())
-        input.onReceive += {
-            val value = input.pending ?: return@plusAssign
+        input.onReceive += inputReceiver@ {
+            val value = input.pending ?: return@inputReceiver
             require(value.dimensions == parameters.inputDimensions) { "input dimension mismatch" }
             val outputs = value.map { embedding ->
                 Embedding.from(DoubleArray(parameters.outputDimensions) { o ->
@@ -138,8 +138,8 @@ class TrainableLinearNode(
                 parameterSnapshots.emit(LinearParameterSnapshot(revision, parameters))
             }
         }
-        parameterUpdates.onReceive += {
-            val change = parameterUpdates.pending ?: return@plusAssign
+        parameterUpdates.onReceive += updateReceiver@ {
+            val change = parameterUpdates.pending ?: return@updateReceiver
             check(change.expectedRevision == revision) { "stale parameters for $name" }
             require(change.parameters.inputDimensions == parameters.inputDimensions &&
                 change.parameters.outputDimensions == parameters.outputDimensions) { "parameter shape mismatch" }
