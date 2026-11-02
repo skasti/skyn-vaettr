@@ -93,6 +93,25 @@ class LinearForwardPass(
 data class LinearParameterSnapshot(val revision: Long, val parameters: LinearParameters)
 data class LinearParameterUpdate(val expectedRevision: Long, val parameters: LinearParameters)
 
+/** Outcome of one consumed parameter-update request. Rejection is normal control flow. */
+sealed interface LinearParameterUpdateResult {
+    val expectedRevision: Long
+    val currentRevision: Long
+
+    data class Applied(
+        override val expectedRevision: Long,
+        override val currentRevision: Long,
+    ) : LinearParameterUpdateResult
+
+    data class Rejected(
+        override val expectedRevision: Long,
+        override val currentRevision: Long,
+        val reason: Reason,
+    ) : LinearParameterUpdateResult {
+        enum class Reason { STALE_REVISION, INVALID_SHAPE }
+    }
+}
+
 /**
  * A projection node with observable differentiable passes and guarded parameter replacement.
  * The parent owns input/output processing; the projection owns the numerical transformation.
@@ -109,9 +128,10 @@ class TrainableProjectionNode(
     val snapshotRequests = SingleSlotPort<Unit>("$name-snapshot-request")
     val parameterSnapshots = SingleSlotPort<LinearParameterSnapshot>("$name-parameters")
     val parameterUpdates = SingleSlotPort<LinearParameterUpdate>("$name-parameter-update")
+    val updateResults = SingleSlotPort<LinearParameterUpdateResult>("$name-parameter-update-result")
 
     override val ports = super.ports + listOf(
-        forwardPasses, snapshotRequests, parameterSnapshots, parameterUpdates,
+        forwardPasses, snapshotRequests, parameterSnapshots, parameterUpdates, updateResults,
     )
 
     var revision: Long = 0
@@ -127,16 +147,29 @@ class TrainableProjectionNode(
         }
         parameterUpdates.onReceive += updateReceiver@ {
             val change = parameterUpdates.pending ?: return@updateReceiver
-            check(change.expectedRevision == revision) { "stale parameters for $name" }
-            require(change.parameters.inputDimensions == trainableProjection.inputDimensions &&
-                change.parameters.outputDimensions == trainableProjection.outputDimensions) {
-                "parameter shape mismatch"
-            }
-            val nextRevision = Math.addExact(revision, 1L)
-            trainableProjection.replaceParameters(change.parameters)
-            revision = nextRevision
+            // Consume before validation: rejected requests must never block the next update.
             parameterUpdates.clear()
-            parameterSnapshots.emit(LinearParameterSnapshot(revision, trainableProjection.parametersSnapshot()))
+
+            val result = when {
+                change.expectedRevision != revision -> LinearParameterUpdateResult.Rejected(
+                    change.expectedRevision, revision,
+                    LinearParameterUpdateResult.Rejected.Reason.STALE_REVISION,
+                )
+                change.parameters.inputDimensions != trainableProjection.inputDimensions ||
+                    change.parameters.outputDimensions != trainableProjection.outputDimensions ->
+                    LinearParameterUpdateResult.Rejected(
+                        change.expectedRevision, revision,
+                        LinearParameterUpdateResult.Rejected.Reason.INVALID_SHAPE,
+                    )
+                else -> {
+                    val nextRevision = Math.addExact(revision, 1L)
+                    trainableProjection.replaceParameters(change.parameters)
+                    revision = nextRevision
+                    parameterSnapshots.emit(LinearParameterSnapshot(revision, trainableProjection.parametersSnapshot()))
+                    LinearParameterUpdateResult.Applied(change.expectedRevision, revision)
+                }
+            }
+            updateResults.emit(result)
         }
     }
 
