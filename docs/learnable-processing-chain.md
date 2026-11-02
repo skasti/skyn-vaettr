@@ -40,6 +40,15 @@ can compose the decoder VJP, attention VJP and three projection VJPs to propagat
 loss through the full chain. This derivative is intentionally restricted to
 `ScaledDotProductAttention`, not arbitrary plug-in attention implementations.
 
+`RecordedAttentionNode` deliberately emits the attention `Representation` first and its
+corresponding `AttentionForwardPass` second. These are **independent port deliveries**,
+not an atomic pair. A downstream node requiring both must retain its inputs and process
+only when both have arrived, regardless of their arrival order. In an isolated
+synchronous execution, the pass's `output` is the same representation object sent on
+the attention port. The current topology provides **no execution correlation guarantee**
+for overlapping or asynchronously delivered executions; consumers must not assume
+that arbitrary outstanding values belong to the same forward pass.
+
 An external trainer may compute its own objective/learning rate, use
 `LinearParameters.descend(gradients, learningRate)`, then submit
 `LinearParameterUpdate(expectedRevision, newParameters)`. A stale revision or a shape
