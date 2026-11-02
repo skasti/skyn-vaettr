@@ -5,12 +5,35 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import no.skasti.skynvaettr.attention.LinearRepresentationProjection
+import no.skasti.skynvaettr.attention.ProjectionNode
 import no.skasti.skynvaettr.attention.ScaledDotProductAttention
 import no.skasti.skynvaettr.representation.Embedding
 import no.skasti.skynvaettr.representation.Representation
 import no.skasti.skynvaettr.runtime.SingleSlotPort
 
 class LearnableProcessingChainTest {
+
+    @Test
+    fun `trainable node specializes projection node without changing ordinary ports`() {
+        val parameters = LinearParameters(listOf(doubleArrayOf(2.0)), doubleArrayOf(1.0))
+        val staticNode = ProjectionNode("linear", LinearRepresentationProjection(parameters))
+        val learnedNode = TrainableProjectionNode(LinearRepresentationProjection(parameters))
+        val input = Representation.of(Embedding.of(3.0))
+        val staticOutput = SingleSlotPort<Representation>("static")
+        val learnedOutput = SingleSlotPort<Representation>("learned")
+        staticNode.output.connectTo(staticOutput)
+        learnedNode.output.connectTo(learnedOutput)
+        staticNode.input.receive(input)
+        learnedNode.input.receive(input)
+
+        kotlin.test.assertIs<ProjectionNode>(learnedNode)
+        assertEquals(staticOutput.pending!!.toList(), learnedOutput.pending!!.toList())
+        assertEquals(2, staticNode.ports.size)
+        assertEquals(6, learnedNode.ports.size)
+        assertEquals(7.0, learnedOutput.pending!![0][0])
+    }
+
     @Test
     fun `linear node records gradients for the actual version used`() {
         val node = TrainableProjectionNode(
