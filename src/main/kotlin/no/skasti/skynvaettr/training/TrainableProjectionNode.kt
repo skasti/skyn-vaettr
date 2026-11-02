@@ -1,5 +1,6 @@
 package no.skasti.skynvaettr.training
 
+import no.skasti.skynvaettr.representation.Embedding
 import no.skasti.skynvaettr.representation.Representation
 import no.skasti.skynvaettr.attention.LinearRepresentationProjection
 import no.skasti.skynvaettr.attention.ProjectionNode
