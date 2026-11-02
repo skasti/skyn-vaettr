@@ -29,7 +29,7 @@ automatically attach a trainer or alter how Samples are sensed.
 
 Each `TrainableProjectionNode` accepts a fixed-shape `LinearParameters` (weights and bias),
 produces a position-wise linear output and an inspectable `LinearForwardPass`, and
-exposes `snapshotRequests`, `parameterSnapshots`, and `parameterUpdates`. The recorded
+exposes `snapshotRequests`, `parameterSnapshots`, `parameterUpdates`, and `updateResults`. The recorded
 pass retains the exact input, output, parameter snapshot and revision, and can compute a
 vector-Jacobian product via `backward(outputGradient)`. The result contains input,
 weight and bias gradients. Arrays are copied at the public boundary.
@@ -43,8 +43,13 @@ loss through the full chain. This derivative is intentionally restricted to
 An external trainer may compute its own objective/learning rate, use
 `LinearParameters.descend(gradients, learningRate)`, then submit
 `LinearParameterUpdate(expectedRevision, newParameters)`. A stale revision or a shape
-change is rejected, and neither the node nor `DefaultTopology` decides how/when to
-train. Frozen evaluation can simply omit parameter updates.
+mismatch is **consumed and rejected without throwing**, leaving the current parameters and
+revision unchanged. The `updateResults` output emits `Applied(expectedRevision, currentRevision)`
+or `Rejected(expectedRevision, currentRevision, reason)`; rejection reasons distinguish
+`STALE_REVISION` and `INVALID_SHAPE`. A trainer observing this port decides whether
+to discard the obsolete gradient or compute a fresh one. As with other `SingleSlotPort`
+outputs, a connected result consumer must drain its port before the next result.
+Neither the node nor `DefaultTopology` decides how/when to train. Frozen evaluation can simply omit parameter updates.
 
 ### Current limit and next validation
 
