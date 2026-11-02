@@ -31,7 +31,9 @@ class RepresentationFanoutNode(override val name: String = "Representation fanou
  * implicit change to DefaultTopology. Pass parameter snapshots/forward passes to an external
  * trainer and route revision-checked replacements back to individual linear nodes.
  *
- * The recorded attention pass and each linear forward pass expose local derivatives; an external\n * trainer can compose them to propagate decoder loss to Q/K/V without adding an optimizer here.\n */
+ * The recorded attention pass and each linear forward pass expose local derivatives; an external
+ * trainer can compose them to propagate decoder loss to Q/K/V without adding an optimizer here.
+ */
 class LearnableProcessingChain(
     queryParameters: LinearParameters,
     keyParameters: LinearParameters,
@@ -40,11 +42,11 @@ class LearnableProcessingChain(
     attentionImplementation: Attention = ScaledDotProductAttention(),
 ) {
     val ingress = RepresentationFanoutNode()
-    val query = TrainableLinearNode(queryParameters, "Query")
-    val key = TrainableLinearNode(keyParameters, "Key")
-    val value = TrainableLinearNode(valueParameters, "Value")
+    val query = TrainableProjectionNode(queryParameters, "Query")
+    val key = TrainableProjectionNode(keyParameters, "Key")
+    val value = TrainableProjectionNode(valueParameters, "Value")
     val attention = RecordedAttentionNode(attentionImplementation)
-    val decoder = TrainableLinearNode(decoderParameters, "Decoder")
+    val decoder = TrainableProjectionNode(decoderParameters, "Decoder")
 
     val input: Port<Representation> get() = ingress.input
     val output: Port<Representation> get() = decoder.output
