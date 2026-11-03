@@ -10,6 +10,19 @@ Confidence is normalized to `0.0..1.0`. It describes the model's own support for
 
 Predictions deliberately have no creation time, mandatory target timestamp, or fixed forecast horizon. Timing, ordering and other temporal semantics belong to the model/runtime context around a prediction rather than to the value type itself.
 
+## Learning what to predict
+
+Autonomous expectation discovery requires the model to learn from observations which future signal states, events, or changes are worth predicting, what values or changes to predict, and which relationships help make those predictions. One learned component may propose predictions, or several learned nodes may share that responsibility.
+
+Deterministic adapters may prepare observations by encoding, normalizing, or tokenizing measurements and preserving signal history. In a discovery experiment, an adapter must not select the target signal, expected value or direction, or fulfilment condition on the model's behalf. The expectation gate consumes model-produced predictions and decides whether to commit to them. Its decisions concern the lifecycle of the belief.
+
+### Training and independent evaluation
+
+An experiment may specify a relationship it hopes the model will discover. Use that hypothesis to evaluate model-produced predictions independently. Keep the relationship out of the model inputs, candidate generation, and training target selection. General self-supervised targets derived from observations are allowed. For example, later observations across available signals can provide training targets using a common rule that applies regardless of the relationship under evaluation.
+
+- **Autonomous discovery.** Give the model observations that include illuminance and outdoor-light state among other signals. Let it learn which signal and change to predict. Evaluate on held-out observations whether its predictions capture how the light responds to illuminance. Where illuminance and time of day covary, include evaluation cases that distinguish them before attributing the prediction to illuminance.
+- **Constrained forecasting.** Supply a candidate that the outdoor light will turn on when illuminance drops and train the model to estimate its likelihood or timing. Explicitly identify the experiment as constrained forecasting. Performance on the supplied candidate measures forecasting under that constraint and cannot by itself establish autonomous discovery.
+
 ## Expectation gate
 
 A prediction may be considered by an expectation gate. The gate owns policy such as:
