@@ -42,6 +42,9 @@ The architecture is guided by a few core principles:
 10. **External constraints should remain external**  
     External services may impose their own operational constraints. These should be handled at the integration or resource boundary without coupling the cadence of internal subsystems directly to a particular provider.
 
+11. **The content of expectations is learned from experience**  
+    Skynvættr should learn which future signal states, events, or changes are worth predicting, what values or changes to predict, and which relationships help make those predictions. Learned components may share responsibility for proposing predictions across nodes. Deterministic preprocessing may encode, normalize, or tokenize observations and preserve their history. It must leave discovery of prediction content to the learnable components. The expectation gate decides whether to commit to a model-produced prediction. See [Predictions and expectations](expectations.md) for the distinction between discovery and scoring externally supplied candidates.
+
 ## The continuous loop
 
 At the highest level, a running Skynvættr instance participates in a continuous feedback loop with its environment.
