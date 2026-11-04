@@ -4,8 +4,8 @@ package no.skasti.skynvaettr.representation
  * Default immutable numeric [Representation].
  *
  * Copies the input list and returns independent lists from [toList]. Its [Embedding] rows are
- * immutable and may be shared. Storage, validation and access semantics match the original
- * numeric Representation class; representations retain reference identity equality.
+ * immutable and may be shared. A representation has at least one position, with the same
+ * dimensions for every embedding. Equality is based on reference identity.
  */
 class NumericRepresentation private constructor(
     embeddings: List<Embedding>,

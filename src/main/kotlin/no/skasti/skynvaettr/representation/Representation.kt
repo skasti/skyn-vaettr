@@ -24,7 +24,7 @@ interface Representation : Iterable<Embedding> {
 
     fun toList(): List<Embedding>
 
-    /** Source-compatible construction of the default numeric implementation. */
+    /** Constructs the default numeric implementation. */
     companion object {
         fun of(vararg embeddings: Embedding): Representation = NumericRepresentation.of(*embeddings)
 

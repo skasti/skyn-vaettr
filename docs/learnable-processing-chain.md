@@ -62,10 +62,10 @@ Neither the node nor `DefaultTopology` decides how/when to train. Frozen evaluat
 
 ### Representation values
 
-The chain's public ports and recorded passes use the `Representation` interface. Its current linear,
+The chain's public ports and recorded passes use the `Representation` interface. Its linear,
 attention and analytic backward operations read numeric `Embedding` values and produce
 `NumericRepresentation` outputs/gradients. The fanout and identity projection preserve object
-identity, while numeric neural operations create new numeric results.
+identity, while numeric neural operations produce separate numeric results.
 
 Forward passes retain input references. Callers must keep those values valid and stable through
 backward, according to the implementation's ownership and lifetime rules.

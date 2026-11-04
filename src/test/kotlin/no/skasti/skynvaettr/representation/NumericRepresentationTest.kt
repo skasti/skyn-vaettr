@@ -66,7 +66,7 @@ class NumericRepresentationTest {
 
     @Test
     fun `returned numeric lists cannot mutate representation storage`() {
-        // Use multiple rows so Kotlin returns a mutable copy, as in the original implementation.
+        // Use multiple rows so Kotlin returns a mutable list copy.
         val representation = NumericRepresentation.of(first, second)
         val copy = representation.toList() as MutableList<Embedding>
         copy[0] = Embedding.of(9.0)
