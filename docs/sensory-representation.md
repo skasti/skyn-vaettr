@@ -105,11 +105,36 @@ training and model ownership are established.
 
 ## Representation
 
-`Representation` is the generic internal numeric form exchanged between model components. It is a two-dimensional sequence of positions × dimensions. Core deliberately assigns no semantic meaning to either axis: positions may represent observations, tokens, time steps, memory slots, or another learned structure.
+`Representation` is the backend-independent logical interface exchanged between model components. It is a two-dimensional sequence of positions × dimensions. Core deliberately assigns no semantic meaning to either axis: positions may represent observations, tokens, time steps, memory slots, or another learned structure.
 
 `Embedding` is one fixed-width vector, and therefore one row/position of a `Representation`.
 
 This boundary is intentionally close to the tensor-like hidden-state representation used inside neural models. Human-readable identities and diagnostics do not need to be decoded and re-encoded between every internal component.
+
+`NumericRepresentation` is the default immutable numeric implementation. It preserves the original
+nonempty, consistent-width validation, copies its input list, and returns independent lists from
+`toList()`. Its immutable `Embedding` rows can be shared. Both `NumericRepresentation.of/from` and
+the source-compatible `Representation.of/from` factories construct numeric representations; the
+latter return the interface type. `Embedding` and its defensive array copies are unchanged.
+
+Other implementations can retain differentiable tensor state without changing `Port<Representation>`
+or the generic topology interfaces. They must specify value stability, aliasing, ownership, access
+cost, thread restrictions and resource lifetime. The common interface does not guarantee immutable
+live backend values or unlimited lifetime. Holding a wrapper in a port or recorded forward pass does
+not keep native resources alive. Retained inputs must remain valid and stable until all consumers,
+including a later manual backward call, finish.
+
+Indexing, iteration and `toList()` expose numeric `Embedding` values. Those numbers do not carry
+autograd history. Inspecting numbers need not detach a backend's original state, but reconstructing
+a tensor from them loses upstream dependencies. Existing `LinearRepresentationProjection`,
+`ScaledDotProductAttention` and analytical backward implementations use numeric arithmetic and
+produce numeric outputs/gradients even when their inputs use another implementation. They do not
+automatically participate in a backend's autograd graph. A differentiable path requires backend-aware
+operations and explicit conversion boundaries; no implicit backend conversion or dispatch is added.
+
+See [Representation compatibility and Playpen migration](representation-compatibility.md) for source
+and JVM binary compatibility, and the findings that motivated this boundary. This interface does not
+implement a tensor backend, asynchronous training or persistent computational graphs.
 
 ## Signal identity embedding
 
@@ -147,7 +172,7 @@ This revision establishes:
 - synchronous ports, synapses, and Graphviz topology rendering;
 - the environment-owned `SampleStore` as the canonical observation history available before
   entrypoint processing;
-- `Representation`/`Embedding` as generic latent numeric data;
+- `Representation` as a logical latent-data interface, with `NumericRepresentation`/`Embedding` as its default numeric form;
 - replaceable embedding and attention contracts with current baseline implementations.
 
 It does not yet define asynchronous scheduling, a module interface, a Transformer, working-memory

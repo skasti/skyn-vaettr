@@ -20,6 +20,7 @@ class AttentionResult internal constructor(
 
 /**
  * Dependency-free scaled dot-product attention over already projected query/key/value representations.
+ * Numeric Embedding arithmetic produces numeric output, not backend autograd operations.
  *
  * This class deliberately does not own Q/K/V projection matrices or training state. A model may
  * learn those projections and pass their outputs here. Keeping the mathematical attention primitive

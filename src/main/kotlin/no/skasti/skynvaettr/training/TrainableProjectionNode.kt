@@ -61,7 +61,11 @@ class LinearGradients(weights: List<DoubleArray>, bias: DoubleArray, val input: 
     val bias: DoubleArray = bias.clone()
 }
 
-/** A completed execution retains exactly the parameters used, even after later node updates. */
+/**
+ * A completed execution retains exactly the parameters used, even after later node updates.
+ * Input/output references are borrowed: callers must keep them valid and stable through backward.
+ * The analytic backward reads numeric values; it does not preserve backend autograd history.
+ */
 class LinearForwardPass(
     val input: Representation,
     val output: Representation,

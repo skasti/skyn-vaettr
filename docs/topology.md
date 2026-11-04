@@ -56,6 +56,12 @@ Buffering policy is deliberately outside the generic port contract. An implement
 value, queue values, replace an existing value, or use another policy. Nodes should only depend on the
 buffering operations exposed by the concrete port policy they are designed to consume.
 
+Representation-bearing ports use the backend-independent `Representation` interface. Ordinary
+synapses deliver the same object without numeric conversion; identity projections also preserve
+it. A port retaining a backend-specific value does not acquire its resources or extend its lifetime.
+Future tensor implementations therefore need an explicit ownership contract, not a change to the
+generic port type. See [Representation](sensory-representation.md#representation).
+
 ### Synapse
 
 A **Synapse** is a directed connection from one source port to one target port:

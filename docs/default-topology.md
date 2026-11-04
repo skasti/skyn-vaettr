@@ -90,7 +90,8 @@ flowchart LR
 The environment stores incoming samples in its canonical `SampleStore` before making them available
 to the topology. `SampleEntryPoint` reads that history, selects the configured history ages for each
 signal, and emits one `Representation` containing signal identity, scalar value, and normalized
-relative time for each selected observation.
+relative time for each selected observation. Its current output is a `NumericRepresentation`, exposed
+through the `Representation` interface.
 
 `QueryNode`, `KeyNode`, and `ValueNode` each have an input and output port. Their default
 `IdentityRepresentationProjection` keeps the sample representation unchanged. A separate

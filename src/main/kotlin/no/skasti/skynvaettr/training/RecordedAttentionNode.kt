@@ -19,6 +19,8 @@ data class AttentionInputGradients(
 /**
  * A completed scaled-dot-product attention execution, including its actual softmax weights.
  * Backward computes the analytic vector-Jacobian product without modifying any node.
+ * Retained representations must remain valid and stable through backward. Numeric arithmetic here
+ * does not preserve an alternative backend's autograd history.
  */
 class AttentionForwardPass(
     val queries: Representation,
