@@ -70,8 +70,33 @@ To adopt the core interface in a later Playpen change:
    `Port<NumericRepresentation>` and the old `Port<TensorRepresentation>` cannot substitute for it.
 4. Keep explicit numeric-to-DJL ingress, DJL-only neural operations, mixed-context rejection and
    ownership/window checks. The common interface does not make core's numeric math differentiable.
-5. Update structural reflection tests to inspect abstract instance members rather than requiring the
-   old class shape; rerun identity, gradient, negative-control, lifetime and matched-baseline checks.
+5. Adjust any tests that require the old concrete class shape. The existing instance-signature
+   reflection comparison remains valid. Rerun identity, gradient, negative-control, lifetime and
+   matched-baseline checks.
 
 No coordinated Playpen modification is part of this core refactoring. Migration should replace the
 prototype abstraction, not establish a permanent second representation interface.
+
+
+## Validation of this refactoring
+
+- JDK 21 / Gradle 8.14: `gradle test` succeeds, 121 tests, zero failures/errors, two existing
+  Graphviz-dependent rendering tests skipped locally because `dot` is unavailable. Repository CI
+  installs Graphviz and runs the complete suite plus report rendering.
+- Recompiled the unchanged PR30/PR31 neural sources and ran all nine tests in `DjlAutogradTest`
+  (four) and `TensorRepresentationTest` (five), with zero failures or skips. This used a temporary
+  composite build against the refactored core, Kotlin 2.1.21 and the experiments' pinned offline
+  DJL 0.36.0 / PyTorch 2.7.1 CPU runtime. The five main files were `DjlNodes`, `DjlAutogradRig`,
+  `TensorRepresentation`, `TensorNodes` and `TensorAutogradRig`; the six test files were the two
+  test classes and their `DjlGradientChecks`, `ManualChainReference`, `TensorContractChecks` and
+  `TensorGradientChecks` helpers, all unchanged from PR31's head above (which includes PR30).
+  These checks cover port identity, numeric access, ownership/lifetime, finite differences, manual
+  VJP agreement, fan-out, recurrence, inspection and graph-breaking negative controls. This was a
+  focused downstream compatibility run, not the full Playpen suite or report-producing experiment.
+- Compiled and ran the same Java source client against old core `a97bfec` and refactored core:
+  companion factories, shape, indexing, iteration and `toList()` pass in both. Running the old
+  compiled client against new core fails with the expected `IncompatibleClassChangeError`.
+  `javap` confirms the preserved instance descriptors and changed class/interface invocation kind.
+
+No downstream source modification was needed for those checks. Core's existing Kotlin callers,
+examples/report sources and topology/attention/learning tests also compile against the interface.
