@@ -10,11 +10,8 @@ package no.skasti.skynvaettr.representation
  *
  * This is a logical access contract, not a storage or ownership contract. Implementations specify
  * value stability, aliasing, access cost, thread restrictions and validity/lifetime. In particular,
- * retaining a representation in a port does not extend the lifetime of backend resources.
+ * retaining a representation in a port does not extend the lifetime of resources it uses.
  * [NumericRepresentation] provides immutable numeric values with no external resource lifetime.
- *
- * [Embedding] access exposes numeric values, not differentiable operations. A backend may retain
- * differentiable state separately; rebuilding that state from numeric values loses its history.
  */
 interface Representation : Iterable<Embedding> {
     val positions: Int

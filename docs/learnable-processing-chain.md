@@ -60,18 +60,15 @@ to discard the obsolete gradient or compute a fresh one. As with other `SingleSl
 outputs, a connected result consumer must drain its port before the next result.
 Neither the node nor `DefaultTopology` decides how/when to train. Frozen evaluation can simply omit parameter updates.
 
-### Representation backends
+### Representation values
 
 The chain's public ports and recorded passes use the `Representation` interface. Its current linear,
 attention and analytic backward operations read numeric `Embedding` values and produce
-`NumericRepresentation` outputs/gradients. Accepting an alternative implementation does not make
-these operations part of its autograd graph. The fanout and identity projection preserve object
-identity, while numeric neural operations create new numeric results as before.
+`NumericRepresentation` outputs/gradients. The fanout and identity projection preserve object
+identity, while numeric neural operations create new numeric results.
 
-Forward passes retain input references, not owned backend snapshots. A caller supplying a backend
-with a bounded lifetime or mutable aliases must keep inputs valid and stable through backward.
-This PR adds no copying policy, backend bridge, lifetime manager or scheduling mechanism. See
-[Representation compatibility](representation-compatibility.md).
+Forward passes retain input references. Callers must keep those values valid and stable through
+backward, according to the implementation's ownership and lifetime rules.
 
 ### Current limit and next validation
 

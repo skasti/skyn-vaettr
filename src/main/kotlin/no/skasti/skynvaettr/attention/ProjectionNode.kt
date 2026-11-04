@@ -35,8 +35,6 @@ interface TrainableRepresentationProjection : RepresentationProjection {
 /**
  * Linear transform shared by static and trainable projection nodes.
  * Replacing parameters never changes the input or output shape.
- * Reads numeric Embeddings and returns a numeric representation; alternative backend autograd
- * history is not propagated by this implementation.
  */
 class LinearRepresentationProjection(
     weights: List<DoubleArray>,

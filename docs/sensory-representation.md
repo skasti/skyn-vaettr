@@ -117,24 +117,13 @@ nonempty, consistent-width validation, copies its input list, and returns indepe
 the source-compatible `Representation.of/from` factories construct numeric representations; the
 latter return the interface type. `Embedding` and its defensive array copies are unchanged.
 
-Other implementations can retain differentiable tensor state without changing `Port<Representation>`
-or the generic topology interfaces. They must specify value stability, aliasing, ownership, access
-cost, thread restrictions and resource lifetime. The common interface does not guarantee immutable
-live backend values or unlimited lifetime. Holding a wrapper in a port or recorded forward pass does
-not keep native resources alive. Retained inputs must remain valid and stable until all consumers,
-including a later manual backward call, finish.
+The interface defines logical access to positions and embeddings. Implementations specify value
+stability, aliasing, access cost, thread restrictions and resource lifetime. The common interface
+does not guarantee immutable values or unlimited lifetime for every implementation. Retained inputs
+must remain valid and stable until all consumers, including a later manual backward call, finish.
 
-Indexing, iteration and `toList()` expose numeric `Embedding` values. Those numbers do not carry
-autograd history. Inspecting numbers need not detach a backend's original state, but reconstructing
-a tensor from them loses upstream dependencies. Existing `LinearRepresentationProjection`,
-`ScaledDotProductAttention` and analytical backward implementations use numeric arithmetic and
-produce numeric outputs/gradients even when their inputs use another implementation. They do not
-automatically participate in a backend's autograd graph. A differentiable path requires backend-aware
-operations and explicit conversion boundaries; no implicit backend conversion or dispatch is added.
-
-See [Representation compatibility and Playpen migration](representation-compatibility.md) for source
-and JVM binary compatibility, and the findings that motivated this boundary. This interface does not
-implement a tensor backend, asynchronous training or persistent computational graphs.
+The existing factory and instance APIs remain source-compatible. Changing `Representation` from a
+class to an interface breaks JVM binary compatibility: dependent code must be recompiled.
 
 ## Signal identity embedding
 
