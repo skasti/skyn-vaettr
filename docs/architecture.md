@@ -291,6 +291,11 @@ flowchart TB
 
 For continuous values, the default assumption should be that models can encode the value directly rather than requiring arbitrary discretization into token-like buckets. Discretization may still be useful for particular models or experiments, but it is a modelling decision rather than a property of the signal itself.
 
+The concrete component boundary is the two-dimensional `Representation` interface. Its default
+`NumericRepresentation` implementation stores immutable numeric embeddings. Ports and processing
+contracts use the interface independently of its implementation. See
+[Representations and processing primitives](sensory-representation.md#representation).
+
 #### Temporal representations
 
 Many useful properties of sensed environments are expressed by change over time rather than by individual readings.

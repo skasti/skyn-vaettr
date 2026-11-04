@@ -1,41 +1,33 @@
 package no.skasti.skynvaettr.representation
 
 /**
- * Generic two-dimensional latent representation exchanged between model components.
+ * Backend-independent two-dimensional latent representation exchanged between model components.
  *
- * A representation is a sequence of positions, each carrying one fixed-width [Embedding]. Core does
- * not assign semantics to either axis: positions may represent observations, tokens, time steps,
- * memory slots, or another model-specific structure.
+ * While valid, a representation has at least one position and one dimension, and every position
+ * exposes an [Embedding] of [dimensions] components. Indexing, iteration and [toList] expose the
+ * same positions in order. Core assigns no semantics to either axis: positions may represent
+ * observations, tokens, time steps, memory slots, or another model-specific structure.
+ *
+ * This is a logical access contract, not a storage or ownership contract. Implementations specify
+ * value stability, aliasing, access cost, thread restrictions and validity/lifetime. In particular,
+ * retaining a representation in a port does not extend the lifetime of resources it uses.
+ * [NumericRepresentation] provides immutable numeric values with no external resource lifetime.
  */
-class Representation private constructor(
-    embeddings: List<Embedding>,
-) : Iterable<Embedding> {
-    private val embeddings: List<Embedding> = embeddings.toList()
-
-    init {
-        require(this.embeddings.isNotEmpty()) { "representation must contain at least one position" }
-    }
-
+interface Representation : Iterable<Embedding> {
     val positions: Int
-        get() = embeddings.size
+    val dimensions: Int
 
-    val dimensions: Int = this.embeddings.first().dimensions
+    /** Returns the position's numeric embedding; an invalid index throws [IndexOutOfBoundsException]. */
+    operator fun get(position: Int): Embedding
 
-    init {
-        require(this.embeddings.all { it.dimensions == dimensions }) {
-            "all embeddings in a representation must have the same dimensions"
-        }
-    }
+    override fun iterator(): Iterator<Embedding>
 
-    operator fun get(position: Int): Embedding = embeddings[position]
+    fun toList(): List<Embedding>
 
-    override fun iterator(): Iterator<Embedding> = embeddings.iterator()
-
-    fun toList(): List<Embedding> = embeddings.toList()
-
+    /** Constructs the default numeric implementation. */
     companion object {
-        fun of(vararg embeddings: Embedding): Representation = from(embeddings.asList())
+        fun of(vararg embeddings: Embedding): Representation = NumericRepresentation.of(*embeddings)
 
-        fun from(embeddings: List<Embedding>): Representation = Representation(embeddings)
+        fun from(embeddings: List<Embedding>): Representation = NumericRepresentation.from(embeddings)
     }
 }

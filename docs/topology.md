@@ -56,6 +56,11 @@ Buffering policy is deliberately outside the generic port contract. An implement
 value, queue values, replace an existing value, or use another policy. Nodes should only depend on the
 buffering operations exposed by the concrete port policy they are designed to consume.
 
+Representation-bearing ports use the `Representation` interface. Ordinary synapses deliver the
+same object without numeric conversion; identity projections also preserve it. Retaining a value
+in a port does not change its implementation's ownership or lifetime rules. See
+[Representation](sensory-representation.md#representation).
+
 ### Synapse
 
 A **Synapse** is a directed connection from one source port to one target port:

@@ -105,11 +105,23 @@ training and model ownership are established.
 
 ## Representation
 
-`Representation` is the generic internal numeric form exchanged between model components. It is a two-dimensional sequence of positions × dimensions. Core deliberately assigns no semantic meaning to either axis: positions may represent observations, tokens, time steps, memory slots, or another learned structure.
+`Representation` is the backend-independent logical interface exchanged between model components. It is a two-dimensional sequence of positions × dimensions. Core deliberately assigns no semantic meaning to either axis: positions may represent observations, tokens, time steps, memory slots, or another learned structure.
 
 `Embedding` is one fixed-width vector, and therefore one row/position of a `Representation`.
 
 This boundary is intentionally close to the tensor-like hidden-state representation used inside neural models. Human-readable identities and diagnostics do not need to be decoded and re-encoded between every internal component.
+
+`NumericRepresentation` is the default immutable numeric implementation. It requires at least one
+position and the same dimensions for every embedding, copies its input list, and returns independent
+lists from `toList()`. Its immutable `Embedding` rows can be shared. Both
+`NumericRepresentation.of/from` and `Representation.of/from` construct numeric representations;
+the latter return the interface type. `Embedding` defensively copies arrays on construction and
+when exposing its components.
+
+The interface defines logical access to positions and embeddings. Implementations specify value
+stability, aliasing, access cost, thread restrictions and resource lifetime. The common interface
+does not guarantee immutable values or unlimited lifetime for every implementation. Retained inputs
+must remain valid and stable until all consumers, including a later manual backward call, finish.
 
 ## Signal identity embedding
 
@@ -134,9 +146,9 @@ or training policy. Separate projection stages can provide Q/K/V inputs, and the
 remains outside the attention operation. See [Default topology](default-topology.md) for the current
 reference projection nodes.
 
-## Current boundary
+## Runtime boundaries
 
-This revision establishes:
+The runtime provides:
 
 - `Environment` as the provider and owner of external input history;
 - `Vaettr` as the update orchestrator;
@@ -147,7 +159,7 @@ This revision establishes:
 - synchronous ports, synapses, and Graphviz topology rendering;
 - the environment-owned `SampleStore` as the canonical observation history available before
   entrypoint processing;
-- `Representation`/`Embedding` as generic latent numeric data;
+- `Representation` as a logical latent-data interface, with `NumericRepresentation`/`Embedding` as its default numeric form;
 - replaceable embedding and attention contracts with current baseline implementations.
 
 It does not yet define asynchronous scheduling, a module interface, a Transformer, working-memory
