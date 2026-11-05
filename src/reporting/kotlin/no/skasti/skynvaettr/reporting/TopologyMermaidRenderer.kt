@@ -1,6 +1,10 @@
 package no.skasti.skynvaettr.reporting
 
+import java.io.IOException
+import java.nio.file.Files
+import java.nio.file.Path
 import java.util.IdentityHashMap
+import java.util.concurrent.TimeUnit
 import no.skasti.skynvaettr.topology.Node
 import no.skasti.skynvaettr.topology.Port
 import no.skasti.skynvaettr.topology.Topology
@@ -9,8 +13,55 @@ import no.skasti.skynvaettr.topology.Topology
  * Exports a topology as a Mermaid flowchart, preserving its groups and individual port connections.
  * Connected target ports outside [Topology.nodes] are shown as data export endpoints.
  */
-class TopologyMermaidRenderer {
-    fun toMermaid(topology: Topology): String {
+class TopologyMermaidRenderer(
+    private val topology: Topology,
+    private val executable: String = System.getenv("MERMAID_CLI") ?: "mmdc",
+    private val puppeteerConfig: String? = System.getenv("MERMAID_PUPPETEER_CONFIG"),
+) {
+    private val mermaidSource by lazy { buildMermaid() }
+
+    /** Captures the topology on the first text or image export. Connect collectors before exporting. */
+    fun toMermaid(): String = mermaidSource
+
+    fun toSvg(output: Path) = renderImage(output, "svg")
+
+    fun toPng(output: Path) = renderImage(output, "png")
+
+    private fun renderImage(output: Path, format: String) {
+        require(output.fileName.toString().endsWith(".$format")) { "Expected a .$format output path" }
+        val destination = output.toAbsolutePath()
+        Files.createDirectories(destination.parent)
+        val work = Files.createTempDirectory(destination.parent, ".mermaid-")
+        try {
+            val input = work.resolve("topology.mmd")
+            val image = work.resolve("topology.$format")
+            val log = work.resolve("mermaid.log")
+            Files.writeString(input, toMermaid())
+            val command = mutableListOf(
+                executable, "--input", input.toString(), "--output", image.toString(),
+                "--backgroundColor", "white", "--size", "1800",
+            )
+            if (format == "png") command += listOf("--scale", "4")
+            puppeteerConfig?.let { command += listOf("--puppeteerConfigFile", it) }
+            val process = try {
+                ProcessBuilder(command).redirectErrorStream(true).redirectOutput(log.toFile()).start()
+            } catch (error: IOException) {
+                throw IOException("Could not start Mermaid CLI '$executable'. Set MERMAID_CLI or install mmdc.", error)
+            }
+            try {
+                check(process.waitFor(90, TimeUnit.SECONDS)) { "Mermaid CLI timed out rendering $output" }
+                check(process.exitValue() == 0) { "Mermaid CLI failed rendering $output: ${Files.readString(log)}" }
+                check(Files.isRegularFile(image) && Files.size(image) > 0) { "Mermaid CLI did not write $output" }
+                Files.move(image, destination, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+            } finally {
+                if (process.isAlive) process.destroyForcibly()
+            }
+        } finally {
+            work.toFile().deleteRecursively()
+        }
+    }
+
+    private fun buildMermaid(): String {
         val nodes = topology.nodes.toList()
         val ids = IdentityHashMap<Node, Int>()
         val owners = IdentityHashMap<Port<*>, Int>()

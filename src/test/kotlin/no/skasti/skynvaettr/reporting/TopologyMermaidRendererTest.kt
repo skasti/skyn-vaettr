@@ -19,9 +19,9 @@ class TopologyMermaidRendererTest {
         val collector = SingleSlotPort<Int>("Exported samples")
         source.output.connectTo(target.output, collector)
         val topology = topology(source, target)
-        val renderer = TopologyMermaidRenderer()
+        val renderer = TopologyMermaidRenderer(topology)
 
-        val diagram = renderer.toMermaid(topology)
+        val diagram = renderer.toMermaid()
 
         assertTrue("n0 -->|\"output\"| n1" in diagram)
         assertTrue("externalPort0@{ shape: das, label: \"Exported samples\" }" in diagram)
@@ -29,11 +29,26 @@ class TopologyMermaidRendererTest {
         assertTrue("classDef externalPort fill:#D5F5F0,stroke:#45A99B" in diagram)
         assertTrue("class externalPort0 externalPort" in diagram)
         assertTrue("class n0,n1 topologyNode" in diagram)
-        assertEquals(diagram, renderer.toMermaid(topology))
+        assertEquals(diagram, renderer.toMermaid())
         assertEquals(2, source.output.synapses.size)
         source.output.emit(42)
         assertEquals(42, target.output.pending)
         assertEquals(42, collector.pending)
+    }
+
+    @Test
+    fun `captures topology on first export`() {
+        val source = DiagramNode("Source")
+        val topology = topology(source)
+        val renderer = TopologyMermaidRenderer(topology)
+        source.output.connectTo(SingleSlotPort<Int>("Early collector"))
+
+        val snapshot = renderer.toMermaid()
+        source.output.connectTo(SingleSlotPort<Int>("Late collector"))
+
+        assertTrue("Early collector" in snapshot)
+        assertEquals(snapshot, renderer.toMermaid())
+        assertTrue("Late collector" in TopologyMermaidRenderer(topology).toMermaid())
     }
 
     @Test
@@ -45,7 +60,7 @@ class TopologyMermaidRendererTest {
         first.output.connectTo(shared, distinct, shared)
         second.output.connectTo(shared)
 
-        val diagram = TopologyMermaidRenderer().toMermaid(topology(first, second))
+        val diagram = TopologyMermaidRenderer(topology(first, second)).toMermaid()
 
         assertEquals(2, Regex("shape: das").findAll(diagram).count())
         assertTrue("n0 -->|\"output\"| externalPort0" in diagram)
@@ -70,7 +85,7 @@ class TopologyMermaidRendererTest {
             override fun update() = Unit
         }
 
-        val diagram = TopologyMermaidRenderer().toMermaid(topology)
+        val diagram = TopologyMermaidRenderer(topology).toMermaid()
 
         assertTrue("  end\n  externalPort0@{" in diagram)
         assertTrue("label: \"Report #quot;A#38;B#quot; #124; #60;values#62;<br/>next\"" in diagram)
@@ -85,7 +100,7 @@ class TopologyMermaidRendererTest {
         first.output.connectTo(second.output)
 
         for (topology in listOf(topology(first, second), topology())) {
-            val diagram = TopologyMermaidRenderer().toMermaid(topology)
+            val diagram = TopologyMermaidRenderer(topology).toMermaid()
             assertTrue(diagram.startsWith("flowchart LR\n"))
             assertFalse("externalPort" in diagram)
             assertFalse("shape: das" in diagram)
@@ -98,10 +113,10 @@ class TopologyMermaidRendererTest {
         val second = DiagramNode("Second", first.output)
 
         assertFailsWith<IllegalArgumentException> {
-            TopologyMermaidRenderer().toMermaid(topology(first, first))
+            TopologyMermaidRenderer(topology(first, first)).toMermaid()
         }
         assertFailsWith<IllegalArgumentException> {
-            TopologyMermaidRenderer().toMermaid(topology(first, second))
+            TopologyMermaidRenderer(topology(first, second)).toMermaid()
         }
     }
 

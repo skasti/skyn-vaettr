@@ -129,7 +129,8 @@ class TopologyRendererTest {
             .connectTo(SingleSlotPort("Query passes"))
         mermaidTopology.nodes.single { it.name == "SignalPredictionDecoder" }.port<Any>("predictions")
             .connectTo(SingleSlotPort("Predictions"))
-        val mermaid = TopologyMermaidRenderer().toMermaid(mermaidTopology)
+        val mermaidRenderer = TopologyMermaidRenderer(mermaidTopology)
+        val mermaid = mermaidRenderer.toMermaid()
         val directory = Path.of("build", "test-artifacts", "TopologyRendererTest", "self-supervised-training")
 
         assertEquals(9, topology.nodes.size)
@@ -162,6 +163,10 @@ class TopologyRendererTest {
         Files.createDirectories(directory)
         Files.writeString(directory.resolve("topology.dot"), dot)
         Files.writeString(directory.resolve("topology.mmd"), mermaid)
+        if (System.getenv("MERMAID_CLI") != null) {
+            mermaidRenderer.toSvg(directory.resolve("topology.svg"))
+            mermaidRenderer.toPng(directory.resolve("topology-mermaid.png"))
+        }
         val executable = System.getenv("GRAPHVIZ_DOT") ?: "dot"
         assumeTrue(graphvizAvailable(executable), "Graphviz is unavailable; topology.dot was still written")
         renderer.render(topology, directory)
