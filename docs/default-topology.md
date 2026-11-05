@@ -123,7 +123,7 @@ The reporting source set uses `TopologyRenderer` to inspect `Topology.nodes`, ea
 Markdown reports and GitHub comments; groups become subgraphs and each connection remains a separate, short arrow labelled by its source port.
 The generated Mermaid diagram configures ELK layout and `curve: rounded` for orthogonal connections
 with rounded corners, including feedback paths and exports.
-CI renders the Mermaid flowchart to `topology.svg` and embeds that image in the PR comment and job
+CI renders the Mermaid flowchart to SVG and PNG and embeds the PNG in the PR comment and job
 summary, since GitHub's Mermaid renderer does not support the ELK layout used by this diagram.
 In Mermaid, a connected target port that is not owned by a node in `Topology.nodes` is rendered as a
 turquoise `das` (direct access storage) endpoint outside the groups, labelled with the target port's
@@ -145,7 +145,7 @@ collapsed. `Topology.groups` become Graphviz clusters with the group name as the
 disconnected nodes remain visible.
 
 Install Graphviz and make `dot` available on `PATH`, or set `GRAPHVIZ_DOT` to the executable path.
-For thermal report Mermaid images, also install Mermaid CLI (`mmdc`) or set `MERMAID_CLI`
+For thermal report Mermaid images, also install Mermaid CLI 12 (`mmdc`, using `--size` for image dimensions) or set `MERMAID_CLI`
 to its executable path. Set `MERMAID_PUPPETEER_CONFIG` if Chromium needs custom settings.
 The example reports can then be rendered with `./gradlew renderExampleReports` or
 `gradlew.bat renderExampleReports` on Windows. CI installs Graphviz and publishes the topology image
