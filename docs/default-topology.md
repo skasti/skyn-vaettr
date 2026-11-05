@@ -128,7 +128,9 @@ summary, since GitHub's Mermaid renderer does not support the ELK layout used by
 In Mermaid, a connected target port that is not owned by a node in `Topology.nodes` is rendered as a
 turquoise `das` (direct access storage) endpoint outside the groups, labelled with the target port's
 name. This makes data exported to report collectors visible without adding those collectors to the
-processing topology. Connect collectors before calling `toMermaid(topology)`. A shared target port
+processing topology. Connect collectors before the first call to `toMermaid()`, `toSvg()`, or `toPng()` on
+`TopologyMermaidRenderer(topology)`. The first call captures the Mermaid source for all exports.
+Create a new renderer after changing the topology. A shared target port
 gets one endpoint; distinct ports keep separate endpoints even when their names match. Outgoing
 connections from these external ports are not traversed. This rendering uses
 [Mermaid 11.13.0 or later](https://github.com/mermaid-js/mermaid/releases/tag/mermaid%4011.13.0)
@@ -143,6 +145,8 @@ collapsed. `Topology.groups` become Graphviz clusters with the group name as the
 disconnected nodes remain visible.
 
 Install Graphviz and make `dot` available on `PATH`, or set `GRAPHVIZ_DOT` to the executable path.
+For thermal report Mermaid images, also install Mermaid CLI (`mmdc`) or set `MERMAID_CLI`
+to its executable path. Set `MERMAID_PUPPETEER_CONFIG` if Chromium needs custom settings.
 The example reports can then be rendered with `./gradlew renderExampleReports` or
 `gradlew.bat renderExampleReports` on Windows. CI installs Graphviz and publishes the topology image
 alongside the example charts.
