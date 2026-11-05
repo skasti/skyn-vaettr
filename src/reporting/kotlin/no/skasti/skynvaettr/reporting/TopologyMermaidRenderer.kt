@@ -39,7 +39,7 @@ class TopologyMermaidRenderer(
             Files.writeString(input, toMermaid())
             val command = mutableListOf(
                 executable, "--input", input.toString(), "--output", image.toString(),
-                "--backgroundColor", "white", "--width", "1800",
+                "--backgroundColor", "white", "--size", "1800",
             )
             if (format == "png") command += listOf("--scale", "4")
             puppeteerConfig?.let { command += listOf("--puppeteerConfigFile", it) }
