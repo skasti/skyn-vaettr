@@ -81,6 +81,9 @@ object ThermalExpectationReport {
         )
 
         TopologyRenderer().render(topology, reportDir)
+        val mermaid = TopologyMermaidRenderer(topology)
+        mermaid.toSvg(reportDir.resolve("topology-mermaid.svg"))
+        mermaid.toPng(reportDir.resolve("topology-mermaid.png"))
 
         Files.writeString(
             reportDir.resolve("summary.md"),
